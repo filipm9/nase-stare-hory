@@ -36,8 +36,13 @@ export async function getToken(forceRefresh = false) {
   cachedToken = data.access_token;
   tokenExpiresAt = Date.now() + data.expires_in * 1000;
 
+  console.log(`VAS API token obtained, expires in ${data.expires_in}s`);
+
   return cachedToken;
 }
+
+// Track if we recently refreshed the token (to avoid redundant refreshes)
+let lastTokenRefresh = 0;
 
 // Helper to make authenticated requests with auto-retry on 401
 async function authenticatedFetch(url, options = {}, retried = false) {
@@ -51,11 +56,31 @@ async function authenticatedFetch(url, options = {}, retried = false) {
     },
   });
 
-  // On 401, refresh token and retry once
+  // On 401, only refresh token if we haven't refreshed recently (within 30 seconds)
   if (response.status === 401 && !retried) {
+    const timeSinceRefresh = Date.now() - lastTokenRefresh;
+    
+    if (timeSinceRefresh < 30000) {
+      // Token was just refreshed, don't refresh again - the issue is not the token
+      console.log('VAS API 401 - token is fresh, skipping refresh (API may deny access to this data)');
+      return response;
+    }
+    
     console.log('VAS API 401, refreshing token and retrying...');
     clearToken();
+    lastTokenRefresh = Date.now();
     return authenticatedFetch(url, options, true);
+  }
+
+  // Log if retry also failed with 401
+  if (response.status === 401 && retried) {
+    // Try to get more info from response body
+    try {
+      const text = await response.clone().text();
+      console.error('VAS API 401 after token refresh:', text || 'no response body');
+    } catch {
+      console.error('VAS API 401 after token refresh - API may deny access to historical data');
+    }
   }
 
   return response;

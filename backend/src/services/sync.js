@@ -108,9 +108,28 @@ export async function syncReadings(meterId, daysBack = 7) {
 export async function syncHistorical(meterId, daysBack = 90) {
   let insertedCount = 0;
   
+  // Get meter's installation date to avoid syncing before it existed
+  const meterResult = await query(
+    'SELECT installed_from FROM meters WHERE meter_id = $1',
+    [meterId]
+  );
+  const installedFrom = meterResult.rows[0]?.installed_from 
+    ? new Date(meterResult.rows[0].installed_from)
+    : null;
+  
   // Split into 30-day chunks to avoid API limits and token expiration
   const chunkSize = 30;
   const dateTo = new Date();
+  
+  // Calculate the earliest date we should sync from
+  let earliestDate = new Date(dateTo);
+  earliestDate.setDate(earliestDate.getDate() - daysBack);
+  
+  // Don't try to sync before meter was installed
+  if (installedFrom && installedFrom > earliestDate) {
+    console.log(`Meter ${meterId} installed on ${installedFrom.toISOString().split('T')[0]}, limiting sync to that date`);
+    earliestDate = installedFrom;
+  }
   
   for (let offset = 0; offset < daysBack; offset += chunkSize) {
     const chunkEnd = new Date(dateTo);
@@ -119,10 +138,19 @@ export async function syncHistorical(meterId, daysBack = 90) {
     const chunkStart = new Date(chunkEnd);
     chunkStart.setDate(chunkStart.getDate() - Math.min(chunkSize, daysBack - offset));
     
-    console.log(`Syncing ${meterId}: ${chunkStart.toISOString().split('T')[0]} to ${chunkEnd.toISOString().split('T')[0]}`);
+    // Skip chunks that are before meter installation
+    if (chunkEnd < earliestDate) {
+      console.log(`Skipping chunk ${chunkStart.toISOString().split('T')[0]} to ${chunkEnd.toISOString().split('T')[0]} - before meter installation`);
+      continue;
+    }
+    
+    // Adjust chunk start if it's before installation
+    const effectiveStart = chunkStart < earliestDate ? earliestDate : chunkStart;
+    
+    console.log(`Syncing ${meterId}: ${effectiveStart.toISOString().split('T')[0]} to ${chunkEnd.toISOString().split('T')[0]}`);
     
     try {
-      const readings = await vasApi.getProfileData(meterId, chunkStart, chunkEnd);
+      const readings = await vasApi.getProfileData(meterId, effectiveStart, chunkEnd);
       
       for (const reading of readings) {
         try {
@@ -142,7 +170,7 @@ export async function syncHistorical(meterId, daysBack = 90) {
         }
       }
     } catch (err) {
-      console.error(`Error syncing chunk ${chunkStart} - ${chunkEnd}:`, err.message);
+      console.error(`Error syncing chunk ${effectiveStart} - ${chunkEnd}:`, err.message);
       // Continue with next chunk instead of failing completely
     }
   }

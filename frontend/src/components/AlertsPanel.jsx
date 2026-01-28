@@ -69,7 +69,7 @@ const colorClasses = {
   },
 };
 
-export default function AlertsPanel({ onCountChange }) {
+export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
@@ -120,14 +120,21 @@ export default function AlertsPanel({ onCountChange }) {
     }
   };
 
-  const handleUnsubscribe = async (id) => {
-    if (!confirm('Naozaj chcete odstrániť tento email?')) return;
-    
-    try {
-      await api.unsubscribe(id);
-      await loadSubscriptions();
-    } catch (err) {
-      console.error('Unsubscribe error:', err);
+  const handleUnsubscribe = (id) => {
+    if (setConfirmDialog) {
+      setConfirmDialog({
+        title: 'Odstrániť email',
+        message: 'Naozaj chcete odstrániť tento email z notifikácií?',
+        confirmText: 'Odstrániť',
+        onConfirm: async () => {
+          try {
+            await api.unsubscribe(id);
+            await loadSubscriptions();
+          } catch (err) {
+            console.error('Unsubscribe error:', err);
+          }
+        },
+      });
     }
   };
 
@@ -169,17 +176,24 @@ export default function AlertsPanel({ onCountChange }) {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Naozaj chcete zmazať tento alert?')) return;
-    
-    try {
-      await api.deleteAlert(id);
-      setAlerts(alerts.filter(a => a.id !== id));
-      
-      const count = await api.getUnreadCount();
-      onCountChange?.(count.count);
-    } catch (err) {
-      console.error('Delete error:', err);
+  const handleDelete = (id) => {
+    if (setConfirmDialog) {
+      setConfirmDialog({
+        title: 'Zmazať alert',
+        message: 'Naozaj chcete zmazať tento alert?',
+        confirmText: 'Zmazať',
+        onConfirm: async () => {
+          try {
+            await api.deleteAlert(id);
+            setAlerts(alerts.filter(a => a.id !== id));
+            
+            const count = await api.getUnreadCount();
+            onCountChange?.(count.count);
+          } catch (err) {
+            console.error('Delete error:', err);
+          }
+        },
+      });
     }
   };
 
@@ -263,26 +277,26 @@ export default function AlertsPanel({ onCountChange }) {
           <button
             onClick={handleDetectLeaks}
             disabled={detecting}
-            className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition disabled:opacity-50 flex items-center gap-2"
           >
             <svg className={`w-4 h-4 ${detecting ? 'animate-pulse' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
               <line x1="12" y1="9" x2="12" y2="13"/>
               <line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
-            {detecting ? 'Kontrolujem...' : 'Skontrolovať teraz'}
+            {detecting ? 'Kontrolujem...' : 'Skontrolovať'}
           </button>
 
           <button
             onClick={() => setShowSubscriptions(true)}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition flex items-center gap-2"
+            className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition flex items-center gap-2"
             title="Notifikačné nastavenia"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
               <polyline points="22,6 12,13 2,6"/>
             </svg>
-            Nastavenia
+            Email
           </button>
         </div>
       </div>
@@ -291,21 +305,21 @@ export default function AlertsPanel({ onCountChange }) {
       {loading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-white rounded-xl p-5 shadow-sm border border-slate-100 animate-pulse">
+            <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 animate-pulse">
               <div className="h-5 bg-slate-200 rounded w-1/4 mb-3"></div>
               <div className="h-4 bg-slate-100 rounded w-3/4"></div>
             </div>
           ))}
         </div>
       ) : alerts.length === 0 ? (
-        <div className="bg-white rounded-xl p-12 shadow-sm border border-slate-100 text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div className="bg-white rounded-2xl p-12 shadow-sm border border-slate-100 text-center">
+          <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <svg className="w-8 h-8 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
               <polyline points="22 4 12 14.01 9 11.01"/>
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-slate-800 mb-2">Všetko v poriadku</h3>
+          <h3 className="text-xl font-semibold text-slate-800 mb-2">Všetko v poriadku</h3>
           <p className="text-slate-500">
             {filter === 'unread' 
               ? 'Žiadne neprečítané alerty'
@@ -314,7 +328,7 @@ export default function AlertsPanel({ onCountChange }) {
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {alerts.map((alert) => {
             const alertType = ALERT_TYPES[alert.alert_type] || {
               label: alert.alert_type,
@@ -326,7 +340,7 @@ export default function AlertsPanel({ onCountChange }) {
             return (
               <div
                 key={alert.id}
-                className={`rounded-xl p-5 border transition ${
+                className={`rounded-2xl p-5 border transition ${
                   alert.is_read 
                     ? 'bg-white border-slate-100' 
                     : `${colors.bg} ${colors.border}`
@@ -334,50 +348,51 @@ export default function AlertsPanel({ onCountChange }) {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl ${
                       alert.is_read ? 'bg-slate-100' : colors.badge
                     }`}>
                       {alertType.icon}
                     </div>
                     <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className={`font-medium ${alert.is_read ? 'text-slate-800' : colors.text}`}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <h3 className={`font-semibold ${alert.is_read ? 'text-slate-800' : colors.text}`}>
                           {alertType.label}
                         </h3>
                         {!alert.is_read && (
-                          <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
+                          <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-semibold rounded-md uppercase">
                             Nový
                           </span>
                         )}
                         {alert.email_sent && (
-                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md">
                             Email odoslaný
                           </span>
                         )}
                       </div>
                       <p className="text-slate-600 mb-2">{alert.message}</p>
-                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                      <div className="flex items-center gap-3 text-sm text-slate-400">
                         <span>{formatDate(alert.created_at)}</span>
-                        {alert.address && <span>• {alert.address}</span>}
+                        {alert.address && <span className="text-slate-300">•</span>}
+                        {alert.address && <span>{alert.address}</span>}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {!alert.is_read && (
                       <button
                         onClick={() => handleMarkRead(alert.id)}
-                        className="p-2 text-slate-400 hover:text-slate-600 transition"
+                        className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
                         title="Označiť ako prečítané"
                       >
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <polyline points="20 6 9 17 4 12"/>
                         </svg>
                       </button>
                     )}
                     <button
                       onClick={() => handleDelete(alert.id)}
-                      className="p-2 text-slate-400 hover:text-red-600 transition"
+                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
                       title="Zmazať"
                     >
                       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
