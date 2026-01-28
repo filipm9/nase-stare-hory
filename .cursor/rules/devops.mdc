@@ -1,0 +1,53 @@
+---
+description: Docker-based DevOps - local and production environments should be identical
+alwaysApply: true
+---
+
+# DevOps - Docker-based Development
+
+## Princíp: Lokálny a produkčný environment majú byť identické
+
+Používaj Docker Compose pre lokálny development aj produkciu. Minimalizuj rozdiely medzi prostredím.
+
+## Štruktúra súborov
+
+```
+docker-compose.yml          # Hlavný súbor pre development (s volumes pre hot-reload)
+docker-compose.test.yml     # Testy v izolovanom prostredí
+Makefile                    # Príkazy pre bežné operácie
+```
+
+## Docker Compose vzor
+
+- Služby: `db`, `backend`, `frontend`
+- PostgreSQL s Alpine image a healthcheck
+- Backend čaká na healthy databázu pred štartom
+- Volumes pre hot-reload v development
+
+```yaml
+services:
+  db:
+    image: postgres:16-alpine
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      retries: 5
+
+  backend:
+    depends_on:
+      db:
+        condition: service_healthy
+```
+
+## Makefile príkazy
+
+Definuj štandardné príkazy:
+- `make test` - spustí všetky testy v Dockeri
+- `make test-backend` / `make test-frontend` - jednotlivé testy
+- `make install` - nainštaluje závislosti lokálne
+
+## Environment Variables
+
+- Definuj `env.example` s komentármi pre každú premennú
+- Citlivé dáta (API kľúče, secrets) predávaj cez `${VAR:-}` syntax v docker-compose
+- Nikdy necommituj `.env` súbory

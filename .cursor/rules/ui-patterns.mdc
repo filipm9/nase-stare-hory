@@ -1,0 +1,146 @@
+---
+description: React UI patterns - modals, toasts, confirmations
+globs: "**/*.jsx,**/*.tsx"
+alwaysApply: false
+---
+
+# UI Patterns - React
+
+## Toast Notifications
+
+### State v App.jsx
+
+```javascript
+const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
+
+const showToast = (message, type = 'success') => {
+  setToast({ message, type });
+};
+
+// Auto-dismiss po 3 sekundách
+useEffect(() => {
+  if (toast) {
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }
+}, [toast]);
+```
+
+### Toast Component (inline v App)
+
+```jsx
+{toast && (
+  <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
+    <div className={`px-5 py-3 rounded-2xl shadow-lg flex items-center gap-3 ${
+      toast.type === 'error' 
+        ? 'bg-red-500 text-white' 
+        : 'bg-green-500 text-white'
+    }`}>
+      {/* Icon */}
+      <span className="font-medium">{toast.message}</span>
+    </div>
+  </div>
+)}
+```
+
+### Použitie s mutations
+
+```javascript
+const createItem = useMutation({
+  mutationFn: api.createItem,
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['items'] });
+    showToast('Položka bola vytvorená');
+  },
+  onError: (error) => {
+    showToast(error.message || 'Chyba pri vytváraní', 'error');
+  },
+});
+```
+
+## Confirm Dialog
+
+### State
+
+```javascript
+const [confirmDialog, setConfirmDialog] = useState(null);
+// { message: string, onConfirm: () => void, onCancel: () => void }
+```
+
+### Component
+
+```jsx
+export function ConfirmDialog({ isOpen, message, onConfirm, onCancel }) {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl" 
+           onClick={(e) => e.stopPropagation()}>
+        <p className="text-gray-700 mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onCancel} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+            Zrušiť
+          </button>
+          <button onClick={onConfirm} className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+            Potvrdiť
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### Použitie
+
+```jsx
+<button onClick={() => setConfirmDialog({
+  message: `Naozaj chcete vymazať "${item.name}"?`,
+  onConfirm: () => {
+    deleteItem.mutate(item.id);
+    setConfirmDialog(null);
+  },
+  onCancel: () => setConfirmDialog(null),
+})}>
+  Vymazať
+</button>
+
+{confirmDialog && <ConfirmDialog isOpen={true} {...confirmDialog} />}
+```
+
+## Modal Pattern
+
+```jsx
+{showModal && (
+  <div
+    className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 backdrop-blur-sm px-4"
+    onClick={() => setShowModal(false)}
+  >
+    <div 
+      className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Modal content */}
+      <button onClick={() => setShowModal(false)}>Zavrieť</button>
+    </div>
+  </div>
+)}
+```
+
+## Tailwind Custom Colors
+
+Definuj vlastné farby v `tailwind.config.js`:
+
+```javascript
+colors: {
+  primary: {
+    50: '#fef7f4',
+    // ... 100-900
+    500: '#f58055',
+  },
+}
+```

@@ -1,0 +1,64 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: watermeter
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/watermeter
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-me}
+      - SESSION_NAME=${SESSION_NAME:-app_session}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - COOKIE_SAMESITE=${COOKIE_SAMESITE:-lax}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
+      - CRON_SECRET=${CRON_SECRET:-}
+      - VAS_API_URL=${VAS_API_URL:-https://crm.vodarenska.cz:65000}
+      - VAS_USERNAME=${VAS_USERNAME:-}
+      - VAS_PASSWORD=${VAS_PASSWORD:-}
+      - VAS_CLIENT_ID=${VAS_CLIENT_ID:-}
+      - VAS_CLIENT_SECRET=${VAS_CLIENT_SECRET:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - ALERT_EMAIL=${ALERT_EMAIL:-}
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/package.json:/app/package.json
+      - /app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE=http://localhost:4000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

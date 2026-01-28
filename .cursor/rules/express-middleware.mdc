@@ -1,0 +1,83 @@
+---
+description: Express.js middleware setup pattern
+globs: "**/index.js,**/app.js"
+alwaysApply: false
+---
+
+# Express Middleware Setup
+
+## Štandardný middleware stack
+
+```javascript
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
+import { config } from './config.js';
+
+const app = express();
+
+// Trust proxy pre Railway/Heroku/Vercel (potrebné pre rate limiting za reverse proxy)
+app.set('trust proxy', 1);
+
+// CORS - povoliť credentials pre cookies
+app.use(cors({
+  origin: config.corsOrigin,
+  credentials: true,
+}));
+
+// Security headers
+app.use(helmet());
+
+// Body parsing
+app.use(express.json());
+
+// Cookies
+app.use(cookieParser());
+
+// Rate limiting
+app.use(rateLimit({
+  windowMs: 5 * 60 * 1000,  // 5 minút
+  limit: 200,               // max 200 requests za okno
+}));
+```
+
+## Health check endpoint
+
+```javascript
+app.get('/health', (req, res) => res.json({ ok: true }));
+```
+
+## Router mounting
+
+```javascript
+app.use('/auth', authRouter);
+app.use('/dogs', dogsRouter);
+app.use('/users', usersRouter);
+```
+
+## Global error handler (vždy na konci)
+
+```javascript
+app.use((err, req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ error: 'Server error' });
+});
+```
+
+## Startup pattern
+
+```javascript
+async function start() {
+  await runMigrations();
+  app.listen(config.port, () => {
+    console.log(`API listening on port ${config.port}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start server', err);
+  process.exit(1);
+});
+```

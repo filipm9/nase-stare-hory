@@ -1,0 +1,117 @@
+---
+description: RESTful API design patterns
+globs: "**/routes/*.js"
+alwaysApply: false
+---
+
+# RESTful API Design
+
+## Router štruktúra
+
+```javascript
+import express from 'express';
+import { query } from '../db.js';
+import { authRequired } from '../auth.js';
+
+export const dogsRouter = express.Router();
+
+// Aplikuj auth na všetky routes v routeri
+dogsRouter.use(authRequired);
+```
+
+## CRUD Endpointy
+
+| Method | Path | Popis | Response |
+|--------|------|-------|----------|
+| GET | `/dogs` | Zoznam (s filtrom) | `[{...}, {...}]` |
+| GET | `/dogs/:id` | Detail jedného | `{...}` |
+| POST | `/dogs` | Vytvorenie | `{...}` (201) |
+| PUT | `/dogs/:id` | Update | `{...}` |
+| DELETE | `/dogs/:id` | Zmazanie | `{ ok: true }` |
+
+## Vzor GET list s filtrom
+
+```javascript
+router.get('/', async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const like = `%${search}%`;
+    
+    const { rows } = await query(`
+      SELECT * FROM items
+      WHERE ($1 = '' OR name ILIKE $2)
+      ORDER BY updated_at DESC
+      LIMIT 50
+    `, [search, like]);
+    
+    res.json(rows);
+  } catch (error) {
+    console.error('Get items error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+## Vzor POST create
+
+```javascript
+router.post('/', async (req, res) => {
+  try {
+    const { name, ...rest } = req.body || {};
+    if (!name) return res.status(400).json({ error: 'name required' });
+    
+    const { rows } = await query(`
+      INSERT INTO items (name, ...) VALUES ($1, ...)
+      RETURNING *
+    `, [name, ...]);
+    
+    res.status(201).json(rows[0]);
+  } catch (error) {
+    console.error('Create item error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+## Vzor PUT update
+
+```javascript
+router.put('/:id', async (req, res) => {
+  try {
+    const { rows } = await query(`
+      UPDATE items SET name = $1, updated_at = now()
+      WHERE id = $2
+      RETURNING *
+    `, [req.body.name, req.params.id]);
+    
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (error) {
+    console.error('Update item error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+## Vzor DELETE
+
+```javascript
+router.delete('/:id', async (req, res) => {
+  try {
+    await query('DELETE FROM items WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Delete item error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+```
+
+## Error responses
+
+- `400` - Bad Request (chýbajúce/nevalidné dáta)
+- `401` - Unauthorized (nie je prihlásený)
+- `404` - Not Found
+- `500` - Internal Server Error
+
+Vždy vráť JSON objekt s `error` kľúčom: `{ error: 'popis chyby' }`

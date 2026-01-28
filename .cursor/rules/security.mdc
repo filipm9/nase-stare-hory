@@ -1,0 +1,111 @@
+---
+description: Security best practices for web apps
+alwaysApply: true
+---
+
+# Security Best Practices
+
+## Backend Security
+
+### 1. Helmet - HTTP Security Headers
+
+```javascript
+import helmet from 'helmet';
+app.use(helmet());
+```
+
+Automaticky nastaví: CSP, X-Frame-Options, X-Content-Type-Options, atď.
+
+### 2. Rate Limiting
+
+```javascript
+import rateLimit from 'express-rate-limit';
+
+app.use(rateLimit({
+  windowMs: 5 * 60 * 1000,  // 5 minút
+  limit: 200,               // max requests
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
+```
+
+### 3. CORS
+
+```javascript
+app.use(cors({
+  origin: config.corsOrigin,  // explicitný origin, nie '*'
+  credentials: true,          // pre cookies
+}));
+```
+
+### 4. Trust Proxy (za load balancerom)
+
+```javascript
+app.set('trust proxy', 1);
+```
+
+### 5. Parameterized Queries (SQL Injection prevention)
+
+```javascript
+// ✅ SPRÁVNE - parameterized
+await query('SELECT * FROM users WHERE id = $1', [userId]);
+
+// ❌ ZLE - SQL injection riziko
+await query(`SELECT * FROM users WHERE id = ${userId}`);
+```
+
+### 6. Password Hashing
+
+```javascript
+import bcrypt from 'bcryptjs';
+
+// Hash pri registrácii
+const hash = await bcrypt.hash(password, 10);
+
+// Verifikácia pri logine
+const valid = await bcrypt.compare(password, user.password_hash);
+```
+
+### 7. JWT v httpOnly Cookies
+
+```javascript
+res.cookie(config.sessionName, token, {
+  httpOnly: true,       // nedostupné cez JavaScript
+  secure: true,         // len HTTPS (v produkcii)
+  sameSite: 'lax',      // CSRF ochrana
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+});
+```
+
+## Environment Variables
+
+- Nikdy necommituj `.env` súbory
+- Použi `env.example` ako template
+- Silné secrets: `openssl rand -hex 32`
+
+```bash
+JWT_SECRET=replace-with-strong-secret
+CRON_SECRET=random-hex-string
+```
+
+## API Security
+
+### Cron/Webhook Endpoints
+
+```javascript
+router.post('/cron', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const providedSecret = authHeader?.replace('Bearer ', '');
+  
+  if (!config.cronSecret || providedSecret !== config.cronSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  // ... pokračuj
+});
+```
+
+## Frontend Security
+
+- Nikdy neukladaj tokeny do localStorage
+- Používaj `credentials: 'include'` pre fetch
+- Sanitizuj HTML pred renderovaním (XSS)

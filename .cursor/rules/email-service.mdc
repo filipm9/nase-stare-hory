@@ -1,0 +1,44 @@
+---
+description: Email sending via Resend service
+globs: "**/*.js"
+alwaysApply: false
+---
+
+# Email Service - Resend
+
+Pre posielanie emailov používaj **Resend** (https://resend.com).
+
+## Setup
+
+1. Získaj API kľúč na https://resend.com/api-keys
+2. Nastav `RESEND_API_KEY` environment variable
+3. Pre development môžeš použiť `onboarding@resend.dev` ako odosielateľa
+
+## Použitie
+
+```javascript
+import { Resend } from 'resend';
+import { config } from '../config.js';
+
+const resend = new Resend(config.resendApiKey);
+
+await resend.emails.send({
+  from: 'onboarding@resend.dev',  // alebo vlastná doména
+  to: recipient,
+  subject: 'Subject',
+  text: 'Plain text content',
+  // Pre prílohy:
+  attachments: [
+    {
+      filename: 'file.txt',
+      content: Buffer.from(content).toString('base64'),
+    },
+  ],
+});
+```
+
+## Best Practices
+
+- Vždy over či je `RESEND_API_KEY` nastavený pred odoslaním
+- Loguj úspešné aj neúspešné odoslania
+- Pre scheduled emaily (backup, notifikácie) použi cron endpoint s `CRON_SECRET`

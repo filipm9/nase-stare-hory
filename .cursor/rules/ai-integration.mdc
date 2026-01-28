@@ -1,0 +1,55 @@
+---
+description: AI integration via OpenAI API
+globs: "**/*.js"
+alwaysApply: false
+---
+
+# AI Integration - OpenAI
+
+Pre AI funkcie používaj **OpenAI API** s jedným API kľúčom (`OPENAI_API_KEY`).
+
+## Dostupné služby
+
+### 1. Speech-to-Text (Whisper)
+
+```javascript
+const formData = new FormData();
+formData.append('file', audioBlob, 'audio.webm');
+formData.append('model', 'whisper-1');
+formData.append('language', 'sk');  // alebo iný jazyk
+formData.append('response_format', 'text');
+
+const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${config.openaiApiKey}` },
+  body: formData,
+});
+```
+
+### 2. Text Processing (GPT)
+
+```javascript
+const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${config.openaiApiKey}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    model: 'gpt-4o-mini',  // cost-effective pre jednoduché úlohy
+    messages: [
+      { role: 'system', content: 'System prompt...' },
+      { role: 'user', content: userInput }
+    ],
+    temperature: 0.3,  // nižšia = deterministickejšie
+    max_tokens: 2000,
+  }),
+});
+```
+
+## Best Practices
+
+- Vždy skontroluj `config.openaiApiKey` pred volaním API
+- Vráť HTTP 503 ak API kľúč nie je nakonfigurovaný
+- Pri zlyhaniach GPT vráť pôvodný vstup ako fallback
+- Loguj raw aj processed výstupy pre debugging

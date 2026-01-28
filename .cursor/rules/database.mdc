@@ -1,0 +1,68 @@
+---
+description: PostgreSQL database patterns
+globs: "**/*.sql,**/db.js"
+alwaysApply: false
+---
+
+# Database - PostgreSQL
+
+## Connection
+
+```javascript
+import pg from 'pg';
+const { Pool } = pg;
+
+export const pool = new Pool({
+  connectionString: config.dbUrl,
+  ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false,
+});
+
+export async function query(text, params) {
+  return pool.query(text, params);
+}
+```
+
+## Migrations
+
+Migrácie bežia pri štarte aplikácie v `db.js`:
+
+```javascript
+export async function runMigrations() {
+  // Create tables if they don't exist
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ...
+  `);
+  
+  // Add columns safely
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'table' AND column_name = 'column'
+      ) THEN
+        ALTER TABLE table ADD COLUMN column type;
+      END IF;
+    END $$;
+  `);
+}
+```
+
+## Užitočné PostgreSQL extensions
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;    -- Fuzzy text search
+CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- Password hashing
+```
+
+## Štruktúra
+
+```
+docker/
+  init-db.sql       # Inicializácia pre Docker
+migrations/
+  add_feature.sql   # Samostatné migrácie (pre dokumentáciu)
+backend/
+  schema.sql        # Kompletná schéma
+  src/db.js         # Programatické migrácie
+```

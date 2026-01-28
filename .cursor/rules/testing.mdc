@@ -1,0 +1,69 @@
+---
+description: Testing patterns with Vitest
+globs: "**/*.test.js"
+alwaysApply: false
+---
+
+# Testing - Vitest
+
+## Framework
+
+Používaj **Vitest** pre backend aj frontend testy.
+
+## Docker-based testy
+
+Testy bežia v Docker kontajneroch pre konzistentnosť:
+
+```yaml
+# docker-compose.test.yml
+services:
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    environment:
+      NODE_ENV: test
+```
+
+## Makefile príkazy
+
+```makefile
+test:           # Všetky testy
+test-backend:   # Len backend
+test-frontend:  # Len frontend
+test-local:     # Lokálne bez Dockera
+```
+
+## Štruktúra testov
+
+```
+backend/
+  src/
+    auth.test.js          # Unit testy vedľa zdrojových súborov
+  tests/
+    auth-routes.test.js   # Integration testy
+
+frontend/
+  src/
+    api/client.test.js
+    utils/helpers.test.js
+```
+
+## Vzor testu
+
+```javascript
+import { describe, it, expect, vi } from 'vitest';
+
+describe('Feature', () => {
+  it('should do something', () => {
+    const result = myFunction(input);
+    expect(result).toBe(expected);
+  });
+});
+```
+
+## Best Practices
+
+- Mockuj externé služby (DB, API) v unit testoch
+- Pre integration testy použi test databázu
+- Testuj edge cases a error handling

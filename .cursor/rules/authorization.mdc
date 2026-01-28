@@ -1,0 +1,92 @@
+---
+description: JWT authentication in httpOnly cookies
+alwaysApply: true
+---
+
+# Autorizácia - JWT v httpOnly cookies
+
+## Princíp
+
+- JWT token uložený v **httpOnly cookie** (nie localStorage)
+- Heslá hashované cez **bcrypt**
+- Middleware `authRequired` pre chránené endpointy
+
+## Backend setup
+
+### auth.js - Token utilities a middleware
+
+```javascript
+import jwt from 'jsonwebtoken';
+import { config } from './config.js';
+
+export function signToken(user) {
+  return jwt.sign({ id: user.id, email: user.email }, config.jwtSecret, {
+    expiresIn: '7d',
+  });
+}
+
+export function authRequired(req, res, next) {
+  const token = req.cookies[config.sessionName];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    req.user = jwt.verify(token, config.jwtSecret);
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+}
+```
+
+### Login endpoint
+
+```javascript
+import bcrypt from 'bcryptjs';
+
+authRouter.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  const user = await getUserByEmail(email);
+  
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+  const token = signToken(user);
+  res.cookie(config.sessionName, token, {
+    httpOnly: true,
+    secure: config.cookieSecure,      // true v produkcii (HTTPS)
+    sameSite: config.cookieSameSite,  // 'lax' alebo 'none' pre cross-origin
+    maxAge: 7 * 24 * 60 * 60 * 1000,  // 7 dní
+  });
+  res.json({ ok: true });
+});
+```
+
+## Config premenné
+
+```bash
+JWT_SECRET=replace-with-strong-secret
+SESSION_NAME=app_session
+COOKIE_SECURE=false        # true v produkcii
+COOKIE_SAMESITE=lax        # 'none' pre cross-origin (frontend/backend na rôznych doménach)
+```
+
+## Frontend
+
+API klient musí posielať cookies:
+
+```javascript
+fetch(url, {
+  credentials: 'include',  // DÔLEŽITÉ - posiela cookies
+  headers: { 'Content-Type': 'application/json' },
+});
+```
+
+## Chránené routy
+
+```javascript
+import { authRequired } from '../auth.js';
+
+router.get('/protected', authRequired, (req, res) => {
+  // req.user obsahuje { id, email } z tokenu
+  res.json({ user: req.user });
+});
+```

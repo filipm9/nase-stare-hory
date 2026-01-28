@@ -1,0 +1,102 @@
+---
+description: Hot reload setup - code changes auto-propagate to Docker containers
+alwaysApply: true
+---
+
+# Hot Reload - Automatická propagácia zmien do kontajnerov
+
+## Princíp
+
+Zmeny v kóde sa automaticky prejavia v bežiacich Docker kontajneroch bez reštartu.
+
+## Kľúčové komponenty
+
+### 1. Docker Compose - Volume mounts
+
+```yaml
+services:
+  backend:
+    volumes:
+      - ./backend/src:/app/src           # Mapuje lokálny src do kontajnera
+      - ./backend/package.json:/app/package.json
+      - /app/node_modules                # Zachová node_modules z kontajnera
+
+  frontend:
+    volumes:
+      - ./frontend:/app                  # Celý frontend
+      - /app/node_modules                # Zachová node_modules z kontajnera
+```
+
+### 2. Backend - Nodemon
+
+```json
+// nodemon.json
+{
+  "watch": ["src"],
+  "ext": "js,json",
+  "ignore": ["node_modules"],
+  "exec": "node src/index.js",
+  "legacyWatch": true          // Potrebné pre Docker volumes
+}
+```
+
+```json
+// package.json
+{
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}
+```
+
+### 3. Frontend - Vite s polling
+
+```javascript
+// vite.config.js
+export default defineConfig({
+  server: {
+    host: true,      // Počúva na 0.0.0.0 (potrebné pre Docker)
+    port: 5173,
+    watch: {
+      usePolling: true,   // Polling namiesto inotify (Docker volumes)
+      interval: 1000,     // Check každú sekundu
+    },
+    hmr: {
+      host: 'localhost',
+      port: 5173,
+    },
+  },
+});
+```
+
+### 4. Dockerfile.dev pre frontend
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm install
+
+COPY . .
+
+EXPOSE 5173
+CMD ["npm", "run", "dev", "--", "--host", "--port", "5173"]
+```
+
+## Ako to funguje
+
+1. **Lokálne uložíš súbor** → zmena sa cez volume mount prejaví v kontajneri
+2. **Nodemon/Vite detekuje zmenu** (pomocou polling, lebo Docker volumes nepodporujú inotify)
+3. **Backend sa reštartne** / **Frontend urobí HMR** (hot module replacement)
+4. **Zmena je viditeľná** v prehliadači bez manuálneho zásahu
+
+## Troubleshooting
+
+- Ak zmeny nejdú cez, skontroluj `legacyWatch: true` v nodemon.json
+- Ak Vite HMR nefunguje, skontroluj `usePolling: true` vo vite.config.js
+- Volume `/app/node_modules` zabraňuje prepísaniu dependencies z lokálu

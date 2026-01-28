@@ -1,0 +1,77 @@
+---
+description: Tech stack conventions - Node.js, Express, React, PostgreSQL
+alwaysApply: true
+---
+
+# Tech Stack
+
+## Backend
+
+- **Runtime**: Node.js s ES modules (`"type": "module"`)
+- **Framework**: Express.js
+- **Database**: PostgreSQL s `pg` driver
+- **Auth**: JWT tokeny, bcrypt pre heslá
+
+### Štruktúra backendu
+
+```
+backend/
+  src/
+    index.js        # Entry point, middleware setup
+    config.js       # Centralizovaná konfigurácia z env vars
+    db.js           # Database connection + migrations
+    auth.js         # Auth middleware
+    routes/         # Express routers (auth.js, dogs.js, etc.)
+  tests/            # Test súbory (.test.js)
+```
+
+### Config pattern
+
+```javascript
+// config.js
+export const config = {
+  port: process.env.PORT || 4000,
+  dbUrl: process.env.DATABASE_URL,
+  // ... ďalšie s defaultami
+};
+```
+
+## Frontend
+
+- **Framework**: React s Vite
+- **Styling**: Tailwind CSS
+- **State**: Jednoduchý useState/useEffect (nie Redux)
+
+### Štruktúra frontendu
+
+```
+frontend/
+  src/
+    api/client.js   # Centralizovaný API klient
+    components/     # React komponenty
+    utils/          # Helper funkcie
+    App.jsx         # Root komponenta
+```
+
+### API Client pattern
+
+```javascript
+// api/client.js
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+
+async function request(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!res.ok) throw new Error(...);
+  return res.json();
+}
+
+export const api = {
+  dogs: () => request('/dogs'),
+  createDog: (body) => request('/dogs', { method: 'POST', body: JSON.stringify(body) }),
+  // ...
+};
+```

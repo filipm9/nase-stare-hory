@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: watermeter_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=test
+      - PORT=4000
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/watermeter_test
+      - JWT_SECRET=test-secret
+      - SESSION_NAME=app_session
+      - COOKIE_SECURE=false
+      - COOKIE_SAMESITE=lax
+    depends_on:
+      db:
+        condition: service_healthy
+    command: npm test
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    command: npm test
