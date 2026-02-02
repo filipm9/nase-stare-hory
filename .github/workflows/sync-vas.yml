@@ -1,0 +1,41 @@
+name: Sync VAS Data
+
+on:
+  schedule:
+    # Každé 2 hodiny
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    # Manuálne spustenie
+    inputs:
+      days:
+        description: 'Historical days to sync'
+        required: false
+        default: '7'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        working-directory: ./backend
+        run: npm install
+      
+      - name: Run sync script
+        working-directory: ./backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VAS_API_URL: https://crm.vodarenska.cz:65000
+          VAS_USERNAME: ${{ secrets.VAS_USERNAME }}
+          VAS_PASSWORD: ${{ secrets.VAS_PASSWORD }}
+          VAS_CLIENT_ID: ${{ secrets.VAS_CLIENT_ID }}
+          VAS_CLIENT_SECRET: ${{ secrets.VAS_CLIENT_SECRET }}
+        run: node scripts/sync-from-github.js ${{ github.event.inputs.days || '7' }}
