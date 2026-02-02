@@ -373,6 +373,86 @@ router.get('/sync-logs', async (req, res) => {
   }
 });
 
+// Diagnostic: Test VAS API connection
+router.get('/diagnostics/vas', async (req, res) => {
+  const { config } = await import('../config.js');
+  const results = {
+    timestamp: new Date().toISOString(),
+    vasApiUrl: config.vas.apiUrl,
+    hasCredentials: !!(config.vas.username && config.vas.password && config.vas.clientId),
+    tests: [],
+  };
+
+  // Test 1: DNS resolution
+  try {
+    const dns = await import('dns');
+    const { promisify } = await import('util');
+    const lookup = promisify(dns.lookup);
+    const url = new URL(config.vas.apiUrl);
+    const dnsResult = await lookup(url.hostname);
+    results.tests.push({
+      name: 'DNS Lookup',
+      status: 'ok',
+      result: `${url.hostname} -> ${dnsResult.address} (IPv${dnsResult.family})`,
+    });
+  } catch (error) {
+    results.tests.push({
+      name: 'DNS Lookup',
+      status: 'error',
+      error: error.message,
+    });
+  }
+
+  // Test 2: TCP connection (simple fetch with short timeout)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    
+    const startTime = Date.now();
+    const response = await fetch(`${config.vas.apiUrl}/connect/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        username: config.vas.username || '',
+        password: config.vas.password || '',
+        client_id: config.vas.clientId || '',
+        client_secret: config.vas.clientSecret || '',
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    
+    const elapsed = Date.now() - startTime;
+    
+    if (response.ok) {
+      const data = await response.json();
+      results.tests.push({
+        name: 'VAS API Auth',
+        status: 'ok',
+        result: `Token obtained in ${elapsed}ms, expires in ${data.expires_in}s`,
+      });
+    } else {
+      const text = await response.text();
+      results.tests.push({
+        name: 'VAS API Auth',
+        status: 'error',
+        result: `HTTP ${response.status} in ${elapsed}ms`,
+        response: text.substring(0, 500),
+      });
+    }
+  } catch (error) {
+    results.tests.push({
+      name: 'VAS API Connection',
+      status: 'error',
+      error: error.message,
+      cause: error.cause?.message || error.cause?.code || 'unknown',
+    });
+  }
+
+  res.json(results);
+});
+
 // Diagnostic: Check if temperature data exists
 router.get('/diagnostics', async (req, res) => {
   try {
