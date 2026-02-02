@@ -100,5 +100,19 @@ export async function runMigrations() {
     )
   `);
 
+  // Seed default admin user if no users exist
+  const usersCount = await query('SELECT COUNT(*) FROM users');
+  if (parseInt(usersCount.rows[0].count) === 0) {
+    const bcrypt = await import('bcryptjs');
+    const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
+    const passwordHash = await bcrypt.default.hash(defaultPassword, 10);
+    
+    await query(
+      'INSERT INTO users (email, password_hash) VALUES ($1, $2)',
+      ['admin@stare-hory.sk', passwordHash]
+    );
+    console.log('Created default admin user: admin@stare-hory.sk');
+  }
+
   console.log('Migrations completed successfully');
 }
