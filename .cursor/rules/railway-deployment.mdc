@@ -1,0 +1,412 @@
+# Railway Deployment - Kompletný Step-by-Step Guide
+
+## Architektúra
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         RAILWAY                                  │
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │   Frontend   │    │   Backend    │    │  PostgreSQL  │      │
+│  │   (nginx)    │───▶│  (Express)   │───▶│  (managed)   │      │
+│  │   port 80    │    │   port 4000  │    │   port 5432  │      │
+│  └──────────────┘    └──────────────┘    └──────────────┘      │
+│         │                   ▲                                    │
+│         │    /api/*         │                                    │
+│         └───────────────────┘                                    │
+│              nginx proxy                                         │
+└─────────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+            ┌──────────────┐
+            │  Prehliadač  │
+            │  (používateľ)│
+            └──────────────┘
+```
+
+**Kľúčový princíp:** Frontend nginx proxyuje `/api/*` requesty na backend. Tým sa vyhneš cross-origin cookie problémom (Safari).
+
+---
+
+## Požadované súbory
+
+### 1. Backend Dockerfile
+
+```dockerfile
+# backend/Dockerfile
+FROM node:20-alpine AS base
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm install --production
+
+COPY . .
+
+EXPOSE $PORT
+CMD ["npm", "start"]
+```
+
+### 2. Backend railway.json
+
+```json
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "npm start",
+    "healthcheckPath": "/health",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
+```
+
+### 3. Frontend Dockerfile.prod
+
+```dockerfile
+# frontend/Dockerfile.prod
+# Build stage
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm install
+
+COPY . .
+
+# KRITICKÉ: API volania idú cez /api proxy (same-origin pre Safari)
+ENV VITE_API_BASE=/api
+RUN npm run build
+
+# Production stage - serve with nginx
+FROM nginx:alpine
+
+COPY --from=build /app/dist /usr/share/nginx/html
+# KRITICKÉ: .template prípona umožňuje envsubst na ${BACKEND_URL}
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### 4. Frontend railway.json
+
+```json
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.prod"
+  },
+  "deploy": {
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
+```
+
+### 5. Frontend nginx.conf (KRITICKÉ!)
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # KRITICKÉ: Proxy API requests na backend (same-origin pre Safari cookies)
+    location /api/ {
+        proxy_pass ${BACKEND_URL}/;
+        proxy_http_version 1.1;
+        # KRITICKÉ: Potrebné pre Railway HTTPS (SNI support)
+        proxy_ssl_server_name on;
+        # KRITICKÉ: Musí byť presný hostname tvojho backendu!
+        proxy_set_header Host TVOJ-BACKEND.up.railway.app;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Cookie $http_cookie;
+        proxy_pass_header Set-Cookie;
+    }
+
+    # SPA routing
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+}
+```
+
+### 6. Frontend API Client
+
+```javascript
+// frontend/src/api/client.js
+// KRITICKÉ: VITE_API_BASE musí byť '/api' v produkcii
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+
+async function request(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include', // KRITICKÉ: Potrebné pre cookies!
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+    ...options,
+  });
+  // ... error handling
+  return res.json();
+}
+```
+
+### 7. Backend Health Endpoint
+
+```javascript
+// backend/src/index.js
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+```
+
+### 8. Backend Cookie Settings
+
+```javascript
+// backend/src/auth.js
+res.cookie(config.sessionName, token, {
+  httpOnly: true,
+  secure: config.cookieSecure,      // true v produkcii
+  sameSite: config.cookieSameSite,  // 'lax' keď používaš proxy
+  maxAge: 7 * 24 * 60 * 60 * 1000,  // 7 dní
+});
+```
+
+### 9. Backend Database Migrations (Auto-create tables)
+
+```javascript
+// backend/src/db.js
+export async function runMigrations() {
+  // KRITICKÉ: Railway PostgreSQL je prázdna - musíš vytvoriť tabuľky
+  await query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  
+  // ... ďalšie tabuľky
+  
+  // KRITICKÉ: Seed admin používateľa ak neexistuje
+  const usersCount = await query('SELECT COUNT(*) FROM users');
+  if (parseInt(usersCount.rows[0].count) === 0) {
+    const bcrypt = await import('bcryptjs');
+    const passwordHash = await bcrypt.default.hash('admin123', 10);
+    await query(
+      'INSERT INTO users (email, password_hash) VALUES ($1, $2)',
+      ['admin@example.sk', passwordHash]
+    );
+    console.log('Created default admin user');
+  }
+}
+```
+
+---
+
+## Railway Deployment - Krok za krokom
+
+### KROK 1: Príprava kódu
+
+1. Uisti sa že máš všetky súbory uvedené vyššie
+2. Commit a push na GitHub:
+   ```bash
+   git add -A
+   git commit -m "Prepare for Railway deployment"
+   git push
+   ```
+
+### KROK 2: Vytvor Railway projekt
+
+1. Choď na **https://railway.app**
+2. Prihlás sa cez GitHub
+3. Klikni **"New Project"**
+4. Vyber **"Empty Project"**
+
+### KROK 3: Pridaj PostgreSQL databázu
+
+1. V projekte klikni **"+ New"**
+2. Vyber **"Database"** → **"PostgreSQL"**
+3. Počkaj kým sa spustí (zelená bodka)
+4. Klikni na PostgreSQL → **"Variables"** tab
+5. Poznač si hodnotu `DATABASE_URL` (alebo použi referenciu)
+
+### KROK 4: Pridaj Backend service
+
+1. Klikni **"+ New"** → **"GitHub Repo"**
+2. Vyber svoj repozitár
+3. Klikni na novú službu → **"Settings"** tab:
+   - **Service Name**: `backend` (premenuj)
+   - **Root Directory**: `backend`
+   - **Watch Paths**: `/backend/**`
+4. Klikni **"Variables"** tab a pridaj tieto premenné:
+
+```
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+NODE_ENV=production
+PORT=4000
+JWT_SECRET=<vygeneruj: openssl rand -hex 32>
+SESSION_NAME=app_session
+COOKIE_SECURE=true
+COOKIE_SAMESITE=lax
+CORS_ORIGIN=https://PLACEHOLDER.up.railway.app
+CRON_SECRET=<vygeneruj: openssl rand -hex 32>
+```
+
+Plus tvoje aplikačné premenné (API keys, etc.)
+
+5. Klikni **"Settings"** → **"Networking"** → **"Generate Domain"**
+6. **POZNAČ SI BACKEND URL** (napr. `nase-app-backend-production.up.railway.app`)
+
+### KROK 5: Pridaj Frontend service
+
+1. Klikni **"+ New"** → **"GitHub Repo"**
+2. Vyber **ten istý** repozitár
+3. Klikni na novú službu → **"Settings"** tab:
+   - **Service Name**: `frontend` (premenuj)
+   - **Root Directory**: `frontend`
+   - **Watch Paths**: `/frontend/**`
+4. Klikni **"Variables"** tab a pridaj:
+
+```
+BACKEND_URL=https://TVOJ-BACKEND.up.railway.app
+```
+
+(Použi backend URL z kroku 4)
+
+5. Klikni **"Settings"** → **"Networking"** → **"Generate Domain"**
+6. **POZNAČ SI FRONTEND URL** (napr. `nase-app-frontend-production.up.railway.app`)
+
+### KROK 6: Aktualizuj Backend CORS
+
+1. Vráť sa do **Backend** → **"Variables"**
+2. Zmeň `CORS_ORIGIN` na frontend URL:
+
+```
+CORS_ORIGIN=https://TVOJ-FRONTEND.up.railway.app
+```
+
+### KROK 7: Aktualizuj nginx.conf Host header
+
+1. V lokálnom kóde otvor `frontend/nginx.conf`
+2. Nájdi riadok `proxy_set_header Host ...`
+3. Zmeň na tvoj skutočný backend hostname:
+
+```nginx
+proxy_set_header Host nase-app-backend-production.up.railway.app;
+```
+
+4. Commit a push:
+   ```bash
+   git add frontend/nginx.conf
+   git commit -m "Update nginx proxy host header"
+   git push
+   ```
+
+### KROK 8: Počkaj na deploy a testuj
+
+1. Počkaj kým obe služby prejdú buildsom (zelené)
+2. Otvor frontend URL v prehliadači
+3. Prihlás sa s default credentials:
+   - **Email**: `admin@example.sk`
+   - **Heslo**: `admin123`
+
+---
+
+## Troubleshooting
+
+### Problem: "502 Bad Gateway" alebo SSL errors
+**Príčina**: nginx nemôže proxy na HTTPS backend
+**Riešenie**: 
+1. Skontroluj že `proxy_ssl_server_name on;` je v nginx.conf
+2. Skontroluj že `proxy_set_header Host` má správny hostname
+
+### Problem: Login funguje v Chrome ale nie v Safari
+**Príčina**: Safari blokuje cross-site cookies
+**Riešenie**: Použi nginx proxy (ako v tomto guide) - cookies sú same-origin
+
+### Problem: "relation does not exist"
+**Príčina**: Databáza je prázdna, tabuľky neexistujú
+**Riešenie**: `runMigrations()` musí používať `CREATE TABLE IF NOT EXISTS`
+
+### Problem: 401 po úspešnom logine
+**Príčina**: Cookie sa nenastavuje/neposiela
+**Riešenie**:
+1. Skontroluj že frontend používa `credentials: 'include'`
+2. Skontroluj že `COOKIE_SAMESITE=lax`
+3. Skontroluj že `VITE_API_BASE=/api` (nie plná backend URL)
+
+### Problem: CORS errors v browser console
+**Príčina**: `CORS_ORIGIN` na backende nesedí s frontend URL
+**Riešenie**: Backend `CORS_ORIGIN` musí byť presná frontend URL vrátane `https://`
+
+---
+
+## Environment Variables - Kompletný zoznam
+
+### Backend
+
+| Premenná | Hodnota | Popis |
+|----------|---------|-------|
+| DATABASE_URL | ${{Postgres.DATABASE_URL}} | Railway referencia na PostgreSQL |
+| NODE_ENV | production | Production mode |
+| PORT | 4000 | Port na ktorom beží Express |
+| JWT_SECRET | <openssl rand -hex 32> | Secret pre JWT tokeny |
+| SESSION_NAME | app_session | Názov cookie |
+| COOKIE_SECURE | true | HTTPS only cookies |
+| COOKIE_SAMESITE | lax | Cookie policy (lax pre proxy) |
+| CORS_ORIGIN | https://frontend.up.railway.app | Povolený origin pre CORS |
+| CRON_SECRET | <openssl rand -hex 32> | Secret pre cron endpointy |
+
+### Frontend
+
+| Premenná | Hodnota | Popis |
+|----------|---------|-------|
+| BACKEND_URL | https://backend.up.railway.app | URL backendu pre nginx proxy |
+
+---
+
+## Generovanie secretov
+
+```bash
+# JWT Secret
+openssl rand -hex 32
+
+# Cron Secret  
+openssl rand -hex 32
+```
+
+---
+
+## Po deployi - Checklist
+
+- [ ] PostgreSQL beží (zelená bodka)
+- [ ] Backend beží (zelená bodka)
+- [ ] Frontend beží (zelená bodka)
+- [ ] Backend má public domain
+- [ ] Frontend má public domain
+- [ ] `CORS_ORIGIN` na backende = frontend URL
+- [ ] `BACKEND_URL` na frontende = backend URL
+- [ ] nginx.conf má správny Host header
+- [ ] Health check funguje: `https://backend.up.railway.app/health`
+- [ ] Login funguje s default credentials
