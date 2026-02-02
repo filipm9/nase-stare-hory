@@ -403,11 +403,30 @@ router.get('/diagnostics/vas', async (req, res) => {
     });
   }
 
-  // Test 2: TCP connection (simple fetch with short timeout)
+  // Test 2: Simple GET to cloudflare (if using proxy)
+  if (config.vas.apiUrl.includes('workers.dev')) {
+    try {
+      const startTime = Date.now();
+      const response = await fetch(`${config.vas.apiUrl}/`, { method: 'GET' });
+      const elapsed = Date.now() - startTime;
+      const text = await response.text();
+      results.tests.push({
+        name: 'Cloudflare Worker Ping',
+        status: response.ok || response.status < 500 ? 'ok' : 'error',
+        result: `HTTP ${response.status} in ${elapsed}ms`,
+        response: text.substring(0, 200),
+      });
+    } catch (error) {
+      results.tests.push({
+        name: 'Cloudflare Worker Ping',
+        status: 'error',
+        error: error.message,
+      });
+    }
+  }
+
+  // Test 3: VAS API Auth
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    
     const startTime = Date.now();
     const response = await fetch(`${config.vas.apiUrl}/connect/token`, {
       method: 'POST',
@@ -419,9 +438,7 @@ router.get('/diagnostics/vas', async (req, res) => {
         client_id: config.vas.clientId || '',
         client_secret: config.vas.clientSecret || '',
       }),
-      signal: controller.signal,
     });
-    clearTimeout(timeout);
     
     const elapsed = Date.now() - startTime;
     
@@ -446,7 +463,7 @@ router.get('/diagnostics/vas', async (req, res) => {
       name: 'VAS API Connection',
       status: 'error',
       error: error.message,
-      cause: error.cause?.message || error.cause?.code || 'unknown',
+      cause: error.cause?.message || error.cause?.code || String(error.cause) || 'unknown',
     });
   }
 
