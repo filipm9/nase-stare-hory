@@ -373,6 +373,41 @@ router.get('/sync-logs', async (req, res) => {
   }
 });
 
+// Quick network test - no auth required
+router.get('/diagnostics/network', async (req, res) => {
+  const results = { tests: [] };
+  
+  // Test 1: Google
+  try {
+    const start = Date.now();
+    const r = await fetch('https://www.google.com', { method: 'HEAD' });
+    results.tests.push({ name: 'Google', status: 'ok', ms: Date.now() - start, code: r.status });
+  } catch (e) {
+    results.tests.push({ name: 'Google', status: 'error', error: e.message });
+  }
+  
+  // Test 2: Cloudflare
+  try {
+    const start = Date.now();
+    const r = await fetch('https://cloudflare.com', { method: 'HEAD' });
+    results.tests.push({ name: 'Cloudflare', status: 'ok', ms: Date.now() - start, code: r.status });
+  } catch (e) {
+    results.tests.push({ name: 'Cloudflare', status: 'error', error: e.message });
+  }
+  
+  // Test 3: Your Worker
+  try {
+    const start = Date.now();
+    const r = await fetch('https://vas-proxy.filip-muller22.workers.dev/', { method: 'GET' });
+    const text = await r.text();
+    results.tests.push({ name: 'CF Worker', status: 'ok', ms: Date.now() - start, code: r.status, body: text.substring(0, 100) });
+  } catch (e) {
+    results.tests.push({ name: 'CF Worker', status: 'error', error: e.message });
+  }
+  
+  res.json(results);
+});
+
 // Diagnostic: Test VAS API connection
 router.get('/diagnostics/vas', async (req, res) => {
   const { config } = await import('../config.js');
