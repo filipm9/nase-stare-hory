@@ -46,6 +46,50 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Network diagnostics (public) - for debugging outbound connections
+app.get('/diagnostics/network', async (req, res) => {
+  const results = { timestamp: new Date().toISOString(), tests: [] };
+  
+  // Test 1: Google
+  try {
+    const start = Date.now();
+    const r = await fetch('https://www.google.com', { method: 'HEAD' });
+    results.tests.push({ name: 'Google', status: 'ok', ms: Date.now() - start, code: r.status });
+  } catch (e) {
+    results.tests.push({ name: 'Google', status: 'error', error: e.message });
+  }
+  
+  // Test 2: Cloudflare
+  try {
+    const start = Date.now();
+    const r = await fetch('https://cloudflare.com', { method: 'HEAD' });
+    results.tests.push({ name: 'Cloudflare', status: 'ok', ms: Date.now() - start, code: r.status });
+  } catch (e) {
+    results.tests.push({ name: 'Cloudflare', status: 'error', error: e.message });
+  }
+  
+  // Test 3: Your Worker
+  try {
+    const start = Date.now();
+    const r = await fetch('https://vas-proxy.filip-muller22.workers.dev/', { method: 'GET' });
+    const text = await r.text();
+    results.tests.push({ name: 'CF Worker', status: 'ok', ms: Date.now() - start, code: r.status, body: text.substring(0, 100) });
+  } catch (e) {
+    results.tests.push({ name: 'CF Worker', status: 'error', error: e.message });
+  }
+  
+  // Test 4: VAS direct (will likely fail)
+  try {
+    const start = Date.now();
+    const r = await fetch('https://crm.vodarenska.cz:65000/', { method: 'GET', signal: AbortSignal.timeout(10000) });
+    results.tests.push({ name: 'VAS Direct', status: 'ok', ms: Date.now() - start, code: r.status });
+  } catch (e) {
+    results.tests.push({ name: 'VAS Direct', status: 'error', error: e.message, ms: Date.now() });
+  }
+  
+  res.json(results);
+});
+
 // Cron routes (protected by secret, not JWT)
 app.use('/cron', cronRoutes);
 
