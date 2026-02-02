@@ -100,23 +100,5 @@ export async function runMigrations() {
     )
   `);
 
-  // Seed default admin user
-  await seedAdminUser();
-
   console.log('Migrations completed successfully');
-}
-
-async function seedAdminUser() {
-  const { default: bcrypt } = await import('bcryptjs');
-  
-  const existing = await query('SELECT id FROM users WHERE email = $1', ['admin@admin.com']);
-  
-  if (existing.rows.length === 0) {
-    const passwordHash = await bcrypt.hash('changeme', 10);
-    await query(
-      'INSERT INTO users (email, password_hash) VALUES ($1, $2)',
-      ['admin@admin.com', passwordHash]
-    );
-    console.log('Default admin user created (admin@admin.com / changeme)');
-  }
 }

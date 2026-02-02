@@ -1,12 +1,29 @@
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Validate required secrets in production
+function requireEnv(name, devDefault = undefined) {
+  const value = process.env[name];
+  if (!value) {
+    if (isProduction) {
+      throw new Error(`Missing required environment variable: ${name}`);
+    }
+    if (devDefault === undefined) {
+      throw new Error(`Missing required environment variable: ${name} (no dev default)`);
+    }
+    return devDefault;
+  }
+  return value;
+}
+
 export const config = {
   port: process.env.PORT || 4000,
   nodeEnv: process.env.NODE_ENV || 'development',
   
-  // Database
-  dbUrl: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/watermeter',
+  // Database - required in production, dev default for local development
+  dbUrl: requireEnv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/watermeter'),
   
-  // JWT & Session
-  jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
+  // JWT & Session - required in production, no insecure defaults
+  jwtSecret: requireEnv('JWT_SECRET', isProduction ? undefined : 'dev-only-secret-not-for-production'),
   jwtExpiresIn: '7d',
   sessionName: process.env.SESSION_NAME || 'app_session',
   cookieSecure: process.env.COOKIE_SECURE === 'true',

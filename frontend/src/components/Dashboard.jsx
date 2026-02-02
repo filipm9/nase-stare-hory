@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import ConsumptionChart from './ConsumptionChart';
 import AlertsPanel from './AlertsPanel';
 import StatsCards from './StatsCards';
 import SettingsPanel from './SettingsPanel';
+import SyncHistory from './SyncHistory';
+import WaterDiagnostics from './WaterDiagnostics';
 
-export default function Dashboard({ onLogout }) {
+export default function Dashboard({ onLogout, showToast }) {
   const [meters, setMeters] = useState([]);
   const [selectedMeter, setSelectedMeter] = useState(null);
   const [stats, setStats] = useState(null);
@@ -18,19 +20,11 @@ export default function Dashboard({ onLogout }) {
   const [syncProgress, setSyncProgress] = useState(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    if (selectedMeter) {
-      loadStats();
-    }
-  }, [selectedMeter]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
+      setError(null);
       const [metersData, countData, logsData] = await Promise.all([
         api.getMeters(),
         api.getUnreadCount(),
@@ -41,22 +35,37 @@ export default function Dashboard({ onLogout }) {
       setUnreadCount(countData.count);
       setSyncLogs(logsData);
       
-      if (metersData.length > 0 && !selectedMeter) {
-        setSelectedMeter(metersData[0]);
-      }
+      return metersData;
     } catch (err) {
-      console.error('Load data error:', err);
+      const errorMessage = err.message || 'Nepodarilo sa načítať dáta';
+      setError(errorMessage);
+      showToast?.(errorMessage, 'error');
+      return [];
     }
-  };
+  }, [showToast]);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async (meterId) => {
     try {
-      const statsData = await api.getStats(selectedMeter.meter_id);
+      const statsData = await api.getStats(meterId);
       setStats(statsData);
     } catch (err) {
-      console.error('Load stats error:', err);
+      showToast?.('Nepodarilo sa načítať štatistiky', 'error');
     }
-  };
+  }, [showToast]);
+
+  useEffect(() => {
+    loadData().then((metersData) => {
+      if (metersData.length > 0) {
+        setSelectedMeter(metersData[0]);
+      }
+    });
+  }, [loadData]);
+
+  useEffect(() => {
+    if (selectedMeter) {
+      loadStats(selectedMeter.meter_id);
+    }
+  }, [selectedMeter, loadStats]);
 
   const handleOpenSyncModal = () => {
     setShowSyncModal(true);
@@ -85,17 +94,19 @@ export default function Dashboard({ onLogout }) {
           `Obdobie: ${syncDays} dní`,
         ],
       });
-      await loadData();
+      const metersData = await loadData();
       if (selectedMeter) {
-        await loadStats();
+        await loadStats(selectedMeter.meter_id);
+      } else if (metersData.length > 0) {
+        setSelectedMeter(metersData[0]);
       }
     } catch (err) {
-      console.error('Sync error:', err);
       setSyncProgress({
         status: 'error',
         message: 'Synchronizácia zlyhala',
         details: [err.message],
       });
+      showToast?.('Synchronizácia zlyhala: ' + err.message, 'error');
     } finally {
       setSyncing(false);
     }
@@ -333,7 +344,7 @@ export default function Dashboard({ onLogout }) {
             {selectedMeter && <ConsumptionChart meterId={selectedMeter.meter_id} />}
           </div>
         ) : activeTab === 'alerts' ? (
-          <AlertsPanel onCountChange={setUnreadCount} setConfirmDialog={setConfirmDialog} />
+          <AlertsPanel onCountChange={setUnreadCount} setConfirmDialog={setConfirmDialog} showToast={showToast} />
         ) : activeTab === 'history' ? (
           <SyncHistory logs={syncLogs} />
         ) : activeTab === 'water-settings' ? (
@@ -569,243 +580,6 @@ export default function Dashboard({ onLogout }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// Sync History component
-function SyncHistory({ logs }) {
-  if (!logs || logs.length === 0) {
-    return (
-      <div className="bg-white rounded-2xl p-12 shadow-sm border border-slate-100 text-center">
-        <div className="w-16 h-16 bg-gradient-to-br from-slate-100 to-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
-          <svg className="w-8 h-8 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
-            <path d="M21 3v5h-5"/>
-          </svg>
-        </div>
-        <h3 className="text-xl font-semibold text-slate-800 mb-2">Žiadna história</h3>
-        <p className="text-slate-500">Zatiaľ nebola vykonaná žiadna synchronizácia.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-800">História synchronizácií</h2>
-        <span className="text-sm text-slate-400 bg-slate-100 px-3 py-1 rounded-full">{logs.length} záznamov</span>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="divide-y divide-slate-100">
-          {logs.map((log, idx) => (
-            <div key={log.id || idx} className="p-4 hover:bg-slate-50/50 transition">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                    log.status === 'success' 
-                      ? 'bg-emerald-100' 
-                      : log.status === 'error' 
-                        ? 'bg-red-100' 
-                        : 'bg-slate-100'
-                  }`}>
-                    {log.status === 'success' ? (
-                      <svg className="w-5 h-5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                    ) : log.status === 'error' ? (
-                      <svg className="w-5 h-5 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <path d="M18 6L6 18M6 6l12 12"/>
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5 text-slate-600 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
-                        <path d="M21 3v5h-5"/>
-                      </svg>
-                    )}
-                  </div>
-                  <div>
-                    <div className="font-medium text-slate-800">
-                      {log.status === 'success' 
-                        ? `Synchronizované ${log.records_synced || 0} záznamov`
-                        : log.status === 'error'
-                          ? 'Synchronizácia zlyhala'
-                          : 'Prebieha synchronizácia...'
-                      }
-                    </div>
-                    <div className="text-sm text-slate-500 mt-1">
-                      {new Date(log.started_at).toLocaleString('sk-SK')}
-                      {log.completed_at && (
-                        <span className="text-slate-400"> • Trvanie: {Math.round((new Date(log.completed_at) - new Date(log.started_at)) / 1000)}s</span>
-                      )}
-                    </div>
-                    {log.error_message && (
-                      <div className="text-sm text-red-600 mt-2 bg-red-50 px-3 py-1.5 rounded-lg">{log.error_message}</div>
-                    )}
-                  </div>
-                </div>
-                <span className={`px-2.5 py-1 text-xs font-medium rounded-lg ${
-                  log.status === 'success'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : log.status === 'error'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-slate-100 text-slate-700'
-                }`}>
-                  {log.status === 'success' ? 'Úspešne' : log.status === 'error' ? 'Chyba' : 'Prebieha'}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Water Diagnostics component
-function WaterDiagnostics() {
-  const [diagnostics, setDiagnostics] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadDiagnostics();
-  }, []);
-
-  const loadDiagnostics = async () => {
-    setLoading(true);
-    try {
-      const data = await api.getDiagnostics();
-      setDiagnostics(data);
-    } catch (err) {
-      console.error('Diagnostics error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-800">Diagnostika vodomera</h2>
-              <p className="text-sm text-slate-500 mt-1">Prehľad dát a stav synchronizácie</p>
-            </div>
-          </div>
-          <div className="text-center py-8">
-            <div className="w-12 h-12 border-4 border-slate-200 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-slate-500">Načítavam diagnostiku...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800">Diagnostika vodomera</h2>
-            <p className="text-sm text-slate-500 mt-1">Prehľad dát a stav synchronizácie</p>
-          </div>
-        </div>
-        
-        {!diagnostics ? (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-              </svg>
-            </div>
-            <p className="text-slate-500">Nepodarilo sa načítať diagnostiku</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl p-4 border border-cyan-100">
-                <div className="text-3xl font-bold text-cyan-700">{diagnostics.totalReadings}</div>
-                <div className="text-sm text-cyan-600 mt-1">Celkom záznamov</div>
-              </div>
-              <div className={`rounded-xl p-4 border ${diagnostics.readingsWithTemperature > 0 ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-100' : 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-100'}`}>
-                <div className={`text-3xl font-bold ${diagnostics.readingsWithTemperature > 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  {diagnostics.readingsWithTemperature}
-                </div>
-                <div className={`text-sm mt-1 ${diagnostics.readingsWithTemperature > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                  S teplotou
-                </div>
-              </div>
-            </div>
-
-            {diagnostics.dateRange && (
-              <div className="bg-slate-50 rounded-xl p-4">
-                <div className="text-sm text-slate-600">
-                  <span className="text-slate-500">Obdobie dát:</span>{' '}
-                  <strong>{new Date(diagnostics.dateRange.oldest).toLocaleDateString('sk-SK')}</strong>
-                  {' — '}
-                  <strong>{new Date(diagnostics.dateRange.newest).toLocaleDateString('sk-SK')}</strong>
-                </div>
-              </div>
-            )}
-
-            {diagnostics.readingsWithTemperature === 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <svg className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/>
-                    <line x1="12" y1="17" x2="12.01" y2="17"/>
-                  </svg>
-                  <div>
-                    <div className="font-medium text-amber-800">Teplota nie je dostupná</div>
-                    <div className="text-sm text-amber-600 mt-1">
-                      VAS API neposiela údaje o teplote pre váš vodomer.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {diagnostics.recentReadings?.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 mb-3">Posledné záznamy</h3>
-                <div className="bg-slate-50 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-slate-100/80">
-                        <th className="text-left py-3 px-4 text-slate-600 font-medium">Dátum</th>
-                        <th className="text-right py-3 px-4 text-slate-600 font-medium">Stav (m³)</th>
-                        <th className="text-right py-3 px-4 text-slate-600 font-medium">Teplota</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {diagnostics.recentReadings.map((r, i) => (
-                        <tr key={i} className="border-t border-slate-200/60">
-                          <td className="py-3 px-4 text-slate-700">
-                            {new Date(r.reading_date).toLocaleString('sk-SK')}
-                          </td>
-                          <td className="py-3 px-4 text-right text-slate-800 font-medium">
-                            {parseFloat(r.state).toFixed(3)}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            {r.heat !== null ? (
-                              <span className="text-emerald-600 font-medium">{r.heat}°C</span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

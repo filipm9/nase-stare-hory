@@ -57,7 +57,7 @@ const colorClasses = {
   },
 };
 
-export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
+export default function AlertsPanel({ onCountChange, setConfirmDialog, showToast }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
@@ -87,7 +87,7 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
       const data = await api.getSubscriptions();
       setSubscriptions(data);
     } catch (err) {
-      console.error('Load subscriptions error:', err);
+      showToast?.('Nepodarilo sa načítať notifikácie', 'error');
     }
   };
 
@@ -100,9 +100,9 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
       await api.subscribe(newEmail);
       setNewEmail('');
       await loadSubscriptions();
+      showToast?.('Email bol pridaný');
     } catch (err) {
-      console.error('Subscribe error:', err);
-      alert('Nepodarilo sa prihlásiť: ' + err.message);
+      showToast?.('Nepodarilo sa prihlásiť: ' + err.message, 'error');
     } finally {
       setSubscribing(false);
     }
@@ -118,8 +118,9 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
           try {
             await api.unsubscribe(id);
             await loadSubscriptions();
+            showToast?.('Email bol odstránený');
           } catch (err) {
-            console.error('Unsubscribe error:', err);
+            showToast?.('Nepodarilo sa odstrániť email', 'error');
           }
         },
       });
@@ -136,7 +137,7 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
       const count = await api.getUnreadCount();
       onCountChange?.(count.count);
     } catch (err) {
-      console.error('Load alerts error:', err);
+      showToast?.('Nepodarilo sa načítať alerty', 'error');
     } finally {
       setLoading(false);
     }
@@ -150,7 +151,7 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
       const count = await api.getUnreadCount();
       onCountChange?.(count.count);
     } catch (err) {
-      console.error('Mark read error:', err);
+      showToast?.('Nepodarilo sa označiť ako prečítané', 'error');
     }
   };
 
@@ -160,7 +161,7 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
       setAlerts(alerts.map(a => ({ ...a, is_read: true })));
       onCountChange?.(0);
     } catch (err) {
-      console.error('Mark all read error:', err);
+      showToast?.('Nepodarilo sa označiť všetky ako prečítané', 'error');
     }
   };
 
@@ -178,7 +179,7 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
             const count = await api.getUnreadCount();
             onCountChange?.(count.count);
           } catch (err) {
-            console.error('Delete error:', err);
+            showToast?.('Nepodarilo sa zmazať alert', 'error');
           }
         },
       });
@@ -194,8 +195,8 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
       setDetectionResult(result);
       await loadAlerts();
     } catch (err) {
-      console.error('Detect leaks error:', err);
       setDetectionResult({ error: err.message });
+      showToast?.('Kontrola zlyhala: ' + err.message, 'error');
     } finally {
       setDetecting(false);
     }
@@ -206,9 +207,9 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog }) {
     try {
       await api.createTestAlert();
       await loadAlerts();
+      showToast?.('Testovací alert bol vytvorený');
     } catch (err) {
-      console.error('Create test alert error:', err);
-      alert('Nepodarilo sa vytvoriť testovací alert: ' + err.message);
+      showToast?.('Nepodarilo sa vytvoriť testovací alert: ' + err.message, 'error');
     } finally {
       setCreatingTest(false);
     }
