@@ -3,7 +3,6 @@ import { sendAlertEmail } from './email.js';
 
 // Thresholds - balanced to avoid false positives
 const THRESHOLDS = {
-  nightConsumption: 0.05,      // m³/hour during night (2-5 AM) - 50L/hod, toleruje WC/pitie
   suddenSpike: 2.5,            // multiplier vs hourly average
   continuousFlowHours: 23,     // hours of non-stop flow (increased - normal home usage can be 18+)
   highDailyMultiplier: 3.0,    // multiplier vs monthly average daily (increased for hot tubs, garden watering)
@@ -17,8 +16,7 @@ export async function detectLeaks(meterId) {
 
   try {
     // Run all detection checks
-    const nightAlert = await checkNightConsumption(meterId);
-    if (nightAlert) alerts.push(nightAlert);
+    // Note: Night consumption check removed - water filtration regeneration runs at night
 
     const spikeAlert = await checkSuddenSpike(meterId);
     if (spikeAlert) alerts.push(spikeAlert);
@@ -42,57 +40,6 @@ export async function detectLeaks(meterId) {
     console.error('Leak detection error:', error);
     return [];
   }
-}
-
-async function checkNightConsumption(meterId) {
-  // Check consumption between 2-5 AM in the last 24 hours
-  // Don't filter consumption > 0, as zero consumption is normal at night
-  const result = await query(`
-    WITH hourly AS (
-      SELECT 
-        reading_date,
-        state,
-        state - LAG(state) OVER (ORDER BY reading_date) as consumption
-      FROM readings
-      WHERE meter_id = $1
-        AND reading_date > NOW() - INTERVAL '24 hours'
-      ORDER BY reading_date
-    )
-    SELECT 
-      MAX(consumption) as max_night_consumption,
-      AVG(consumption) as avg_night_consumption,
-      COUNT(*) as reading_count
-    FROM hourly
-    WHERE EXTRACT(HOUR FROM reading_date) BETWEEN 2 AND 5
-      AND consumption IS NOT NULL
-  `, [meterId]);
-
-  // If no readings in night hours, skip alert (no data to analyze)
-  const readingCount = parseInt(result.rows[0]?.reading_count) || 0;
-  if (readingCount === 0) return null;
-
-  const maxConsumption = parseFloat(result.rows[0]?.max_night_consumption) || 0;
-
-  if (maxConsumption > THRESHOLDS.nightConsumption) {
-    // Check if we already have a similar alert in last 6 hours
-    const existing = await query(`
-      SELECT id FROM alerts 
-      WHERE meter_id = $1 
-        AND alert_type = 'night_consumption'
-        AND created_at > NOW() - INTERVAL '6 hours'
-    `, [meterId]);
-
-    if (existing.rows.length === 0) {
-      return {
-        type: 'night_consumption',
-        message: `Detekovaná spotreba vody v noci (2-5h): ${maxConsumption.toFixed(4)} m³/hod. Normálne by mala byť ~0.`,
-        value: maxConsumption,
-        threshold: THRESHOLDS.nightConsumption,
-      };
-    }
-  }
-
-  return null;
 }
 
 async function checkSuddenSpike(meterId) {

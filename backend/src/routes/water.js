@@ -217,39 +217,7 @@ router.post('/detect-leaks', async (req, res) => {
 async function getDetectionDetails(meterId) {
   const checks = [];
   
-  // Night consumption check
-  const nightResult = await query(`
-    WITH hourly AS (
-      SELECT 
-        reading_date,
-        state,
-        state - LAG(state) OVER (ORDER BY reading_date) as consumption
-      FROM readings
-      WHERE meter_id = $1
-        AND reading_date > NOW() - INTERVAL '24 hours'
-      ORDER BY reading_date
-    )
-    SELECT 
-      MAX(consumption) as max_consumption,
-      AVG(consumption) as avg_consumption,
-      COUNT(*) as reading_count
-    FROM hourly
-    WHERE EXTRACT(HOUR FROM reading_date) BETWEEN 2 AND 5
-      AND consumption IS NOT NULL
-  `, [meterId]);
-  
-  const nightReadings = parseInt(nightResult.rows[0]?.reading_count || 0);
-  const nightMax = parseFloat(nightResult.rows[0]?.max_consumption || 0);
-  
-  checks.push({
-    name: 'Nočná spotreba (2-5h)',
-    description: 'Kontrola spotreby v nočných hodinách (toleruje WC, pitie)',
-    threshold: '0.05 m³/hod (50 litrov)',
-    currentValue: nightReadings > 0 
-      ? `${nightMax.toFixed(4)} m³/hod` 
-      : 'Žiadne dáta v nočných hodinách',
-    status: nightMax > 0.05 ? 'warning' : 'ok',
-  });
+  // Note: Night consumption check removed - water filtration regeneration runs at night
   
   // Sudden spike check - get average from 7 days
   const spikeResult = await query(`

@@ -108,7 +108,6 @@ router.post('/test', async (req, res) => {
     const meterId = meterResult.rows[0].meter_id;
     
     const alertTypes = [
-      { type: 'night_consumption', message: 'Testovací alert: Detekovaná spotreba vody v noci (2-5h): 0.05 m³/hod.' },
       { type: 'sudden_spike', message: 'Testovací alert: Náhly skok spotreby: 0.15 m³/hod (3x viac ako normálne).' },
       { type: 'continuous_flow', message: 'Testovací alert: Voda tečie nepretržite už 20 hodín.' },
       { type: 'high_daily', message: 'Testovací alert: Dnešná spotreba 0.8 m³ je 2x vyššia ako priemer.' },

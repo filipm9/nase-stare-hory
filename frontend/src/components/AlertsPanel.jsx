@@ -4,12 +4,6 @@ import { format, parseISO } from 'date-fns';
 import { sk } from 'date-fns/locale';
 
 const ALERT_TYPES = {
-  night_consumption: {
-    label: 'Nočná spotreba',
-    icon: '🌙',
-    color: 'purple',
-    description: 'Detekovaná spotreba vody v nočných hodinách (2-5h)',
-  },
   sudden_spike: {
     label: 'Náhly skok',
     icon: '📈',
@@ -37,12 +31,6 @@ const ALERT_TYPES = {
 };
 
 const colorClasses = {
-  purple: {
-    bg: 'bg-purple-50',
-    border: 'border-purple-200',
-    text: 'text-purple-700',
-    badge: 'bg-purple-100 text-purple-700',
-  },
   red: {
     bg: 'bg-red-50',
     border: 'border-red-200',
