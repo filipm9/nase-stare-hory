@@ -48,7 +48,11 @@ app.get('/health', (req, res) => {
 
 // Network diagnostics (public) - for debugging outbound connections
 app.get('/diagnostics/network', async (req, res) => {
-  const results = { timestamp: new Date().toISOString(), tests: [] };
+  const results = { 
+    timestamp: new Date().toISOString(), 
+    vasApiUrl: config.vas.apiUrl,
+    tests: [] 
+  };
   
   // Test 1: Google
   try {
@@ -76,23 +80,34 @@ app.get('/diagnostics/network', async (req, res) => {
     results.tests.push({ name: 'CF Worker Echo', status: 'error', error: e.message });
   }
   
-  // Test 3: VAS Proxy Worker with Durable Object (location hint: eeur)
+  // Test 3: VAS Proxy - test actual token endpoint
   try {
     const start = Date.now();
-    const r = await fetch('https://vas-proxy-do.filip-muller22.workers.dev/', { 
-      method: 'GET',
+    const r = await fetch(`${config.vas.apiUrl}/connect/token`, { 
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        username: config.vas.username || '',
+        password: config.vas.password || '',
+        client_id: config.vas.clientId || '',
+        client_secret: config.vas.clientSecret || '',
+      }),
       signal: AbortSignal.timeout(15000),
     });
-    const data = await r.json();
+    const text = await r.text();
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { parsed = text.substring(0, 200); }
     results.tests.push({ 
-      name: 'CF VAS Proxy DO', 
-      status: data.vasTest?.status === 'ok' ? 'ok' : 'error', 
-      ms: Date.now() - start, 
-      locationHint: data.location_hint,
-      vasTest: data.vasTest,
+      name: 'VAS Token', 
+      status: r.ok ? 'ok' : 'error', 
+      ms: Date.now() - start,
+      httpStatus: r.status,
+      hasToken: !!parsed?.access_token,
+      response: r.ok ? 'token received' : parsed,
     });
   } catch (e) {
-    results.tests.push({ name: 'CF VAS Proxy DO', status: 'error', error: e.message });
+    results.tests.push({ name: 'VAS Token', status: 'error', error: e.message });
   }
   
   res.json(results);
