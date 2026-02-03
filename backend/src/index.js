@@ -59,32 +59,40 @@ app.get('/diagnostics/network', async (req, res) => {
     results.tests.push({ name: 'Google', status: 'error', error: e.message });
   }
   
-  // Test 2: Cloudflare
+  // Test 2: Simple echo Worker (no VAS)
   try {
     const start = Date.now();
-    const r = await fetch('https://cloudflare.com', { method: 'HEAD' });
-    results.tests.push({ name: 'Cloudflare', status: 'ok', ms: Date.now() - start, code: r.status });
+    const r = await fetch('https://test.filip-muller22.workers.dev/', { method: 'GET' });
+    const data = await r.json();
+    results.tests.push({ 
+      name: 'CF Worker Echo', 
+      status: 'ok', 
+      ms: Date.now() - start, 
+      code: r.status,
+      colo: data.cf?.colo,
+      country: data.cf?.country,
+    });
   } catch (e) {
-    results.tests.push({ name: 'Cloudflare', status: 'error', error: e.message });
+    results.tests.push({ name: 'CF Worker Echo', status: 'error', error: e.message });
   }
   
-  // Test 3: Your Worker
+  // Test 3: VAS Proxy Worker
   try {
     const start = Date.now();
-    const r = await fetch('https://vas-proxy.filip-muller22.workers.dev/', { method: 'GET' });
+    const r = await fetch('https://vas-proxy.filip-muller22.workers.dev/connect/token', { 
+      method: 'GET',  // Just GET to test connectivity, will return error but fast
+      signal: AbortSignal.timeout(15000),
+    });
     const text = await r.text();
-    results.tests.push({ name: 'CF Worker', status: 'ok', ms: Date.now() - start, code: r.status, body: text.substring(0, 100) });
+    results.tests.push({ 
+      name: 'CF VAS Proxy', 
+      status: r.status < 500 ? 'ok' : 'error', 
+      ms: Date.now() - start, 
+      code: r.status, 
+      body: text.substring(0, 150) 
+    });
   } catch (e) {
-    results.tests.push({ name: 'CF Worker', status: 'error', error: e.message });
-  }
-  
-  // Test 4: VAS direct (will likely fail)
-  try {
-    const start = Date.now();
-    const r = await fetch('https://crm.vodarenska.cz:65000/', { method: 'GET', signal: AbortSignal.timeout(10000) });
-    results.tests.push({ name: 'VAS Direct', status: 'ok', ms: Date.now() - start, code: r.status });
-  } catch (e) {
-    results.tests.push({ name: 'VAS Direct', status: 'error', error: e.message, ms: Date.now() });
+    results.tests.push({ name: 'CF VAS Proxy', status: 'error', error: e.message });
   }
   
   res.json(results);
