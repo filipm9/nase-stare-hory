@@ -76,24 +76,23 @@ app.get('/diagnostics/network', async (req, res) => {
     results.tests.push({ name: 'CF Worker Echo', status: 'error', error: e.message });
   }
   
-  // Test 3: VAS Proxy Worker (root returns debug info + VAS test)
+  // Test 3: VAS Proxy Worker with Durable Object (location hint: eeur)
   try {
     const start = Date.now();
-    const r = await fetch('https://vas-proxy.filip-muller22.workers.dev/', { 
+    const r = await fetch('https://vas-proxy-do.filip-muller22.workers.dev/', { 
       method: 'GET',
       signal: AbortSignal.timeout(15000),
     });
     const data = await r.json();
     results.tests.push({ 
-      name: 'CF VAS Proxy', 
+      name: 'CF VAS Proxy DO', 
       status: data.vasTest?.status === 'ok' ? 'ok' : 'error', 
       ms: Date.now() - start, 
-      workerColo: data.cf?.colo,
-      workerCountry: data.cf?.country,
+      locationHint: data.location_hint,
       vasTest: data.vasTest,
     });
   } catch (e) {
-    results.tests.push({ name: 'CF VAS Proxy', status: 'error', error: e.message });
+    results.tests.push({ name: 'CF VAS Proxy DO', status: 'error', error: e.message });
   }
   
   res.json(results);
