@@ -39,7 +39,8 @@ export const config = {
   vas: {
     apiUrl: process.env.VAS_API_URL || 'https://crm.vodarenska.cz:65000',
     username: process.env.VAS_USERNAME,
-    password: process.env.VAS_PASSWORD,
+    // Workaround: Railway cuts password at #, so suffix is hardcoded
+    password: (process.env.VAS_PASSWORD || '') + '#Y_1',
     clientId: process.env.VAS_CLIENT_ID,
     clientSecret: process.env.VAS_CLIENT_SECRET,
   },
