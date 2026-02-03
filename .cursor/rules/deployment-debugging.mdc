@@ -1,0 +1,399 @@
+# Deployment Debugging & External API Communication
+
+## Prehľad problémov
+
+Táto dokumentácia popisuje riešenie problémov s:
+1. Railway deployment a connectivity
+2. Externé API ktoré blokujú cloud provider IPs
+3. Cloudflare Workers ako proxy riešenie
+4. Environment variables so špeciálnymi znakmi
+
+---
+
+## Problém: Externé API blokuje Railway/Cloud IPs
+
+### Symptómy
+```
+ConnectTimeoutError: Connect Timeout Error (attempted address: api.example.com:65000, timeout: 10000ms)
+```
+
+- Lokálne funguje, na Railway timeout
+- DNS lookup OK, ale connection timeout
+- API server má firewall ktorý blokuje cloud provider IP ranges
+
+### Diagnóza
+
+Pridaj diagnostický endpoint do Express:
+
+```javascript
+app.get('/diagnostics/network', async (req, res) => {
+  const results = { 
+    timestamp: new Date().toISOString(), 
+    apiUrl: config.api.url,
+    tests: [] 
+  };
+  
+  // Test 1: Google (baseline)
+  try {
+    const start = Date.now();
+    const r = await fetch('https://www.google.com', { method: 'HEAD' });
+    results.tests.push({ name: 'Google', status: 'ok', ms: Date.now() - start });
+  } catch (e) {
+    results.tests.push({ name: 'Google', status: 'error', error: e.message });
+  }
+  
+  // Test 2: Target API
+  try {
+    const start = Date.now();
+    const r = await fetch(config.api.url, { 
+      method: 'GET',
+      signal: AbortSignal.timeout(10000),
+    });
+    results.tests.push({ name: 'Target API', status: 'ok', ms: Date.now() - start, code: r.status });
+  } catch (e) {
+    results.tests.push({ name: 'Target API', status: 'error', error: e.message });
+  }
+  
+  res.json(results);
+});
+```
+
+### Interpretácia výsledkov
+
+| Google | Target API | Diagnóza |
+|--------|------------|----------|
+| OK | Timeout | Target blokuje cloud IPs |
+| OK | Connection refused | Firewall/port blokovaný |
+| Timeout | Timeout | Railway network issue |
+| OK | 4xx/5xx | API dostupné, iný problém |
+
+---
+
+## Riešenie: Cloudflare Workers s Durable Objects
+
+### Prečo Durable Objects?
+
+Štandardné Cloudflare Workers:
+- Request sa spracuje na najbližšom edge k REQUESTOROVI
+- Ak Railway je v AMS, Worker beží v AMS
+- Target API v CZ stále vidí cloud IP a blokuje
+
+Durable Objects s `locationHint`:
+- Môžeš špecifikovať región kde má Worker bežať
+- `locationHint: "eeur"` = Eastern Europe (blízko CZ)
+- Worker beží bližšie k target API
+
+### KRITICKÉ: Cloudflare fetch() routing
+
+**Cloudflare Workers `fetch()` routuje cez Cloudflare CDN!**
+
+Ak target API je za Cloudflare alebo blokuje CF IPs, dostaneš 404 aj keď Worker beží v správnom regióne.
+
+**Riešenie: Raw TCP sockets**
+
+```javascript
+import { connect } from 'cloudflare:sockets';
+
+// Toto OBÍDE Cloudflare CDN routing
+const socket = connect({
+  hostname: 'api.example.com',
+  port: 65000,
+}, {
+  secureTransport: 'on',
+});
+```
+
+### Kompletný Cloudflare Worker s Raw Sockets
+
+**wrangler.toml:**
+```toml
+name = "api-proxy-do"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[[durable_objects.bindings]]
+name = "PROXY"
+class_name = "ApiProxyDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ApiProxyDO"]  # REQUIRED for free tier!
+```
+
+**src/index.js:**
+```javascript
+import { connect } from 'cloudflare:sockets';
+
+export class ApiProxyDO {
+  constructor(state, env) {
+    this.state = state;
+  }
+
+  async rawHttpRequest(method, path, headers, body) {
+    const socket = connect({
+      hostname: 'api.example.com',
+      port: 65000,
+    }, {
+      secureTransport: 'on',
+      allowHalfOpen: false,
+    });
+
+    const writer = socket.writable.getWriter();
+    const reader = socket.readable.getReader();
+
+    // Build HTTP request
+    const lines = [
+      `${method} ${path} HTTP/1.1`,
+      `Host: api.example.com:65000`,
+    ];
+    
+    for (const [key, value] of Object.entries(headers)) {
+      if (value) lines.push(`${key}: ${value}`);
+    }
+    
+    if (body) lines.push(`Content-Length: ${body.length}`);
+    lines.push('Connection: close');
+    lines.push('');
+    if (body) lines.push(body);
+
+    const httpRequest = lines.join('\r\n') + (body ? '' : '\r\n');
+    await writer.write(new TextEncoder().encode(httpRequest));
+
+    // Read response
+    let response = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      response += new TextDecoder().decode(value);
+    }
+    await socket.close();
+
+    // Parse HTTP response
+    const [headerPart, ...bodyParts] = response.split('\r\n\r\n');
+    const responseBody = bodyParts.join('\r\n\r\n');
+    const statusMatch = headerPart.match(/HTTP\/[\d.]+ (\d+)/);
+    const status = statusMatch ? parseInt(statusMatch[1]) : 500;
+
+    const responseHeaders = {};
+    for (const line of headerPart.split('\r\n').slice(1)) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx > 0) {
+        responseHeaders[line.substring(0, colonIdx).trim().toLowerCase()] = 
+          line.substring(colonIdx + 1).trim();
+      }
+    }
+
+    return { status, headers: responseHeaders, body: responseBody };
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    // Debug endpoint
+    if (url.pathname === '/' && request.method === 'GET') {
+      return new Response(JSON.stringify({
+        worker: 'api-proxy-do',
+        status: 'ready',
+      }, null, 2), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Proxy all other requests
+    const path = url.pathname + url.search;
+    const headers = {};
+    
+    const contentType = request.headers.get('content-type');
+    if (contentType) headers['Content-Type'] = contentType;
+    
+    const auth = request.headers.get('authorization');
+    if (auth) headers['Authorization'] = auth;
+
+    let body = null;
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      body = await request.text();
+    }
+
+    try {
+      const result = await this.rawHttpRequest(request.method, path, headers, body);
+      
+      return new Response(result.body, {
+        status: result.status,
+        headers: {
+          'Content-Type': result.headers['content-type'] || 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      });
+    }
+
+    const id = env.PROXY.idFromName("proxy");
+    // locationHint forces DO to run in specific region
+    const stub = env.PROXY.get(id, { locationHint: "eeur" });
+    return stub.fetch(request);
+  }
+}
+```
+
+### Deployment
+
+```bash
+# Vytvor projekt
+mkdir -p ~/Documents/api-proxy-do
+cd ~/Documents/api-proxy-do
+
+# Vytvor súbory (wrangler.toml a src/index.js)
+
+# Deploy
+npm install -g wrangler  # alebo: brew install wrangler
+wrangler login
+wrangler deploy
+```
+
+### locationHint hodnoty
+
+| Hint | Región |
+|------|--------|
+| `wnam` | Western North America |
+| `enam` | Eastern North America |
+| `sam` | South America |
+| `weur` | Western Europe |
+| `eeur` | Eastern Europe |
+| `apac` | Asia Pacific |
+| `oc` | Oceania |
+| `afr` | Africa |
+| `me` | Middle East |
+
+---
+
+## Problém: Railway Environment Variables so špeciálnymi znakmi
+
+### Symptóm
+
+Password `zETt8S8#Y_1` sa v Railway uloží ako `zETt8S8` - `#` je interpretovaný ako komentár.
+
+### Riešenie 1: Split password
+
+```javascript
+// config.js
+vas: {
+  // Workaround: Railway cuts password at #, so suffix is hardcoded
+  password: (process.env.VAS_PASSWORD || '') + '#Y_1',
+}
+```
+
+Railway variables:
+```
+VAS_PASSWORD=zETt8S8
+```
+
+### Riešenie 2: Dva env variables
+
+```javascript
+password: (process.env.VAS_PASSWORD || '') + (process.env.VAS_PASSWORD_SUFFIX || ''),
+```
+
+Railway variables:
+```
+VAS_PASSWORD=zETt8S8
+VAS_PASSWORD_SUFFIX=#Y_1
+```
+
+### Riešenie 3: Base64 encoding
+
+```javascript
+password: Buffer.from(process.env.VAS_PASSWORD_B64 || '', 'base64').toString(),
+```
+
+Railway variables:
+```
+VAS_PASSWORD_B64=ekVUdDhTOCNZXzE=
+```
+
+---
+
+## Debugging checklist
+
+### 1. Connectivity issues
+
+- [ ] Pridaj `/diagnostics/network` endpoint
+- [ ] Testuj z Railway (nie lokálne)
+- [ ] Porovnaj Google vs Target API response
+- [ ] Skontroluj či target API má firewall
+
+### 2. Cloudflare Worker issues
+
+- [ ] Skontroluj `wrangler tail` logy
+- [ ] Testuj Worker priamo v browseri
+- [ ] Porovnaj `colo` v response (PRG vs SJC)
+- [ ] Ak fetch vracia 404 ale curl funguje → použi raw sockets
+
+### 3. Auth issues
+
+- [ ] Skontroluj env variables cez diagnostiku
+- [ ] Pozor na špeciálne znaky (# v hesle)
+- [ ] Skontroluj či účet nie je zablokovaný (príliš veľa pokusov)
+
+### 4. Railway specific
+
+- [ ] Použil si `${{Service.VAR}}` syntax pre referencie?
+- [ ] Je CORS_ORIGIN nastavený na frontend URL?
+- [ ] Je COOKIE_SAMESITE=lax pre nginx proxy setup?
+
+---
+
+## Časté chybové hlášky
+
+| Error | Príčina | Riešenie |
+|-------|---------|----------|
+| `ConnectTimeoutError` | Firewall blokuje | Cloudflare proxy |
+| `522 Connection timed out` | CF Worker timeout k origin | Raw sockets |
+| `404 Not Found` (od VAS) | CF routing issue | Raw sockets |
+| `403 Nesprávné přihlašovací údaje` | Zlé credentials | Skontroluj env vars |
+| `403 Účet zablokován` | Príliš veľa pokusov | Počkaj 15-30 min |
+| `new_sqlite_classes` error | Free tier DO | Použi `new_sqlite_classes` v migration |
+
+---
+
+## Architektúra po riešení
+
+```
+Railway Backend
+     │
+     │ HTTPS fetch
+     ▼
+Cloudflare Worker (vas-proxy-do)
+     │
+     │ locationHint: "eeur"
+     ▼
+Durable Object (runs in Eastern Europe)
+     │
+     │ Raw TCP socket (bypasses CF CDN)
+     ▼
+Target API (crm.vodarenska.cz:65000)
+```
+
+Táto architektúra:
+1. Railway volá Cloudflare Worker URL
+2. Worker deleguje na Durable Object v regióne blízko target API
+3. DO používa raw TCP socket, ktorý obchádza Cloudflare CDN routing
+4. Target API vidí "normálnu" IP, nie cloud provider IP
