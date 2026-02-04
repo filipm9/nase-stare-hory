@@ -13,6 +13,7 @@ import alertsRoutes from './routes/alerts.js';
 import snowRoutes from './routes/snow.js';
 import wasteRoutes from './routes/waste.js';
 import cronRoutes from './routes/cron.js';
+import settlementsRoutes from './routes/settlements.js';
 
 const app = express();
 
@@ -126,6 +127,7 @@ app.use('/water', authRequired, waterRoutes);
 app.use('/alerts', authRequired, alertsRoutes);
 app.use('/snow', authRequired, snowRoutes);
 app.use('/waste', authRequired, wasteRoutes);
+app.use('/settlements', authRequired, settlementsRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {

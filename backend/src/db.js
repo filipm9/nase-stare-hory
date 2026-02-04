@@ -158,6 +158,29 @@ export async function runMigrations() {
     ON waste_alerts(created_at DESC)
   `);
 
+  // Settlements table for water/electricity billing calculations
+  await query(`
+    CREATE TABLE IF NOT EXISTS settlements (
+      id SERIAL PRIMARY KEY,
+      settlement_type VARCHAR(20) NOT NULL CHECK (settlement_type IN ('water', 'electricity')),
+      period_year INTEGER NOT NULL,
+      period_label VARCHAR(100),
+      status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'completed')),
+      readings JSONB NOT NULL DEFAULT '{}',
+      financials JSONB NOT NULL DEFAULT '{}',
+      calculation JSONB,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      completed_at TIMESTAMP,
+      email_sent BOOLEAN DEFAULT FALSE,
+      UNIQUE(settlement_type, period_year)
+    )
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_settlements_type_year 
+    ON settlements(settlement_type, period_year DESC)
+  `);
+
   // Seed default admin user if no users exist
   const usersCount = await query('SELECT COUNT(*) FROM users');
   if (parseInt(usersCount.rows[0].count) === 0) {

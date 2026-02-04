@@ -12,6 +12,7 @@ import SnowDiagnostics from './SnowDiagnostics';
 import AllAlertsPanel from './AllAlertsPanel';
 import WasteCalendar from './WasteCalendar';
 import WasteAlertsPanel from './WasteAlertsPanel';
+import SettlementPanel from './SettlementPanel';
 
 function WasteModuleCard({ wasteStats, wasteUnreadCount, isActive, onClick, onCheckWaste, checkingWaste }) {
   const nextPickup = wasteStats?.nextPickup;
@@ -80,6 +81,38 @@ function WasteModuleCard({ wasteStats, wasteUnreadCount, isActive, onClick, onCh
         ) : (
           <p className="text-sm text-slate-400">Žiadne naplánované</p>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SettlementModuleCard({ isActive, onClick }) {
+  return (
+    <div 
+      onClick={onClick}
+      className={`flex-shrink-0 bg-white rounded-2xl border-2 shadow-sm p-4 min-w-[240px] relative overflow-hidden cursor-pointer transition ${
+        isActive ? 'border-purple-500 ring-2 ring-purple-500/20' : 'border-purple-500/30 hover:border-purple-400'
+      }`}
+    >
+      <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-purple-500/10 to-transparent rounded-bl-full pointer-events-none" />
+      <div className="flex items-start justify-between mb-3">
+        <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-violet-500 rounded-xl flex items-center justify-center shadow-sm">
+          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="2" width="16" height="20" rx="2"/>
+            <line x1="8" y1="6" x2="16" y2="6"/>
+            <line x1="8" y1="10" x2="16" y2="10"/>
+            <line x1="8" y1="14" x2="12" y2="14"/>
+          </svg>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Vyúčtovanie</p>
+        <p className="text-lg font-semibold text-slate-800">
+          Energie
+        </p>
+        <p className="text-xs text-slate-400">
+          Voda & Elektrina
+        </p>
       </div>
     </div>
   );
@@ -488,6 +521,12 @@ export default function Dashboard({ onLogout, showToast }) {
                 onCheckWaste={handleCheckWaste}
                 checkingWaste={checkingWaste}
               />
+
+              {/* Settlement module */}
+              <SettlementModuleCard 
+                isActive={activeModule === 'settlement'}
+                onClick={() => { setActiveModule('settlement'); setActiveTab('settlement'); }}
+              />
             </div>
           </div>
         )}
@@ -621,6 +660,17 @@ export default function Dashboard({ onLogout, showToast }) {
                   )}
                 </button>
               </>
+            ) : activeModule === 'settlement' ? (
+              <button
+                onClick={() => setActiveTab('settlement')}
+                className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
+                  activeTab === 'settlement'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Vyúčtovanie energií
+              </button>
             ) : null}
           </nav>
         </div>
@@ -689,6 +739,8 @@ export default function Dashboard({ onLogout, showToast }) {
             setConfirmDialog={setConfirmDialog} 
             showToast={showToast}
           />
+        ) : activeTab === 'settlement' ? (
+          <SettlementPanel showToast={showToast} />
         ) : null}
       </main>
 

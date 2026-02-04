@@ -116,6 +116,121 @@ export async function sendSnowAlertEmail(alert, analysis) {
   }
 }
 
+export async function sendSettlementBackup(settlement) {
+  const client = getResend();
+  
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY is not set - settlement backup email cannot be sent');
+    return false;
+  }
+
+  const typeLabels = {
+    water: 'Voda',
+    electricity: 'Elektrina',
+  };
+
+  const subject = `📊 Vyúčtovanie ${typeLabels[settlement.settlement_type]} ${settlement.period_year} - Backup`;
+  
+  const calculation = settlement.calculation || {};
+  const summary = calculation.summary || {};
+  
+  // Build steps table
+  let stepsRows = '';
+  if (calculation.steps) {
+    for (const step of calculation.steps) {
+      if (step.section) {
+        stepsRows += `
+          <tr style="background: #f1f5f9;">
+            <td colspan="2" style="padding: 12px 8px; font-weight: bold; color: #475569;">${step.label}</td>
+          </tr>
+        `;
+      } else {
+        const highlight = step.highlight ? 'background: #ecfdf5; font-weight: bold;' : '';
+        const value = step.value !== null 
+          ? (typeof step.value === 'number' ? step.value.toFixed(step.unit === 'GJ' ? 4 : 2) : step.value)
+          : '-';
+        stepsRows += `
+          <tr style="${highlight}">
+            <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${step.label}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">${value} ${step.unit}</td>
+          </tr>
+        `;
+      }
+    }
+  }
+  
+  // Build summary
+  const bennyPayment = summary.benny?.payment || 0;
+  const filipPayment = summary.filip?.payment || 0;
+  
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+      <h2 style="color: #0f766e;">📊 Vyúčtovanie ${typeLabels[settlement.settlement_type]} - ${settlement.period_year}</h2>
+      
+      <div style="background: #f0fdfa; border: 1px solid #5eead4; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <h3 style="margin: 0 0 12px 0; color: #134e4a;">Výsledok</h3>
+        <table style="width: 100%;">
+          <tr>
+            <td style="padding: 4px 0; color: #475569;">Benny:</td>
+            <td style="padding: 4px 0; text-align: right; font-weight: bold; ${bennyPayment > 0 ? 'color: #dc2626;' : 'color: #16a34a;'}">
+              ${bennyPayment > 0 ? 'Platí' : 'Dostane'} ${Math.abs(bennyPayment).toFixed(0)} Kč
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 0; color: #475569;">Filip:</td>
+            <td style="padding: 4px 0; text-align: right; font-weight: bold; ${filipPayment > 0 ? 'color: #dc2626;' : 'color: #16a34a;'}">
+              ${filipPayment > 0 ? 'Platí' : 'Dostane'} ${Math.abs(filipPayment).toFixed(0)} Kč
+            </td>
+          </tr>
+        </table>
+      </div>
+      
+      <h4 style="color: #374151; margin: 24px 0 8px 0;">Kompletný výpočet:</h4>
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px;">
+        <tbody>
+          ${stepsRows}
+        </tbody>
+      </table>
+      
+      <h4 style="color: #374151; margin: 24px 0 8px 0;">Hodnoty meračov (pre budúce obdobie):</h4>
+      <div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <pre style="margin: 0; font-size: 12px; white-space: pre-wrap;">${JSON.stringify(settlement.readings, null, 2)}</pre>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+      
+      <p style="color: #9ca3af; font-size: 12px;">
+        Vyúčtovanie dokončené: ${new Date(settlement.completed_at).toLocaleString('sk-SK')}<br>
+        Tento email slúži ako backup pre prípad straty dát.
+      </p>
+    </div>
+  `;
+
+  try {
+    const subscribers = await getSubscribers();
+    
+    if (subscribers.length === 0) {
+      console.warn('No subscribers to send settlement backup email to');
+      return false;
+    }
+
+    console.log(`Sending settlement backup email to ${subscribers.length} subscribers`);
+
+    const result = await client.emails.send({
+      from: 'Staré Hory Monitor <onboarding@resend.dev>',
+      to: subscribers,
+      subject,
+      html,
+    });
+    
+    console.log('Settlement backup email sent:', result);
+    return true;
+  } catch (error) {
+    console.error('Failed to send settlement backup email:', error);
+    return false;
+  }
+}
+
 export async function sendAlertEmail(alert) {
   const client = getResend();
   

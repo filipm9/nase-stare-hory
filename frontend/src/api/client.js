@@ -193,4 +193,31 @@ export const api = {
   deleteWasteAlert: (id) => request(`/waste/alerts/${id}`, { method: 'DELETE' }),
   
   createTestWasteAlert: () => request('/waste/alerts/test', { method: 'POST' }),
+
+  // Settlements module
+  getSettlements: (type) => {
+    const query = type ? `?type=${type}` : '';
+    return request(`/settlements${query}`);
+  },
+  
+  getSettlement: (id) => request(`/settlements/${id}`),
+  
+  getLatestSettlement: (type) => request(`/settlements/latest/${type}`),
+  
+  saveSettlement: (data) =>
+    request('/settlements', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  
+  calculateSettlement: (id) =>
+    request(`/settlements/${id}/calculate`, { method: 'POST' }),
+  
+  completeSettlement: (id, sendEmail = true) =>
+    request(`/settlements/${id}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ sendEmail }),
+    }),
+  
+  deleteSettlement: (id) => request(`/settlements/${id}`, { method: 'DELETE' }),
 };
