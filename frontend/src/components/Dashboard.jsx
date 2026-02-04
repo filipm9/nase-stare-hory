@@ -10,6 +10,80 @@ import SnowForecast from './SnowForecast';
 import SnowAlertsPanel from './SnowAlertsPanel';
 import SnowDiagnostics from './SnowDiagnostics';
 import AllAlertsPanel from './AllAlertsPanel';
+import WasteCalendar from './WasteCalendar';
+import WasteAlertsPanel from './WasteAlertsPanel';
+
+function WasteModuleCard({ wasteStats, wasteUnreadCount, isActive, onClick, onCheckWaste, checkingWaste }) {
+  const nextPickup = wasteStats?.nextPickup;
+  
+  const WASTE_EMOJI = { komunal: '🗑️', plast: '♻️', papier: '📄' };
+  const WASTE_LABELS = { komunal: 'Komunálny', plast: 'Plasty', papier: 'Papier' };
+  
+  const formatNextDate = (dateStr) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    if (date.toDateString() === today.toDateString()) return 'Dnes';
+    if (date.toDateString() === tomorrow.toDateString()) return 'Zajtra';
+    
+    return date.toLocaleDateString('sk-SK', { weekday: 'short', day: 'numeric', month: 'short' });
+  };
+  
+  return (
+    <div 
+      onClick={onClick}
+      className={`flex-shrink-0 bg-white rounded-2xl border-2 shadow-sm p-4 min-w-[240px] relative overflow-hidden cursor-pointer transition ${
+        isActive ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-emerald-500/30 hover:border-emerald-400'
+      }`}
+    >
+      <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-full pointer-events-none" />
+      <div className="flex items-start justify-between mb-3">
+        <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-green-500 rounded-xl flex items-center justify-center shadow-sm">
+          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+          </svg>
+        </div>
+        <div className="flex items-center gap-1">
+          {wasteUnreadCount > 0 && (
+            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-medium rounded">
+              {wasteUnreadCount}
+            </span>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onCheckWaste(); }}
+            disabled={checkingWaste}
+            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition disabled:opacity-50"
+            title="Skontrolovať zajtrajší vývoz"
+          >
+            <svg className={`w-4 h-4 ${checkingWaste ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+              <path d="M21 3v5h-5"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Odpad</p>
+        {nextPickup ? (
+          <>
+            <p className="text-xl font-semibold text-slate-800">
+              <span className="text-emerald-600">{formatNextDate(nextPickup.pickup_date)}</span>
+            </p>
+            <p className="text-xs text-slate-400">
+              {WASTE_EMOJI[nextPickup.waste_type]} {WASTE_LABELS[nextPickup.waste_type]}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-slate-400">Žiadne naplánované</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SnowModuleCard({ onCheckSnow, checkingSnow, snowForecast, snowUnreadCount, isActive, onClick }) {
   const tomorrowSnow = snowForecast?.forecast?.snowfall_sum?.[1] || 0;
@@ -103,7 +177,14 @@ export default function Dashboard({ onLogout, showToast }) {
   // Snow module state
   const [checkingSnow, setCheckingSnow] = useState(false);
   const [snowForecast, setSnowForecast] = useState(null);
+  
+  // Waste module state
+  const [checkingWaste, setCheckingWaste] = useState(false);
   const [snowUnreadCount, setSnowUnreadCount] = useState(0);
+  
+  // Waste module state
+  const [wasteStats, setWasteStats] = useState(null);
+  const [wasteUnreadCount, setWasteUnreadCount] = useState(0);
   
   // All alerts modal state (for bell icon)
   const [showAllAlertsModal, setShowAllAlertsModal] = useState(false);
@@ -112,13 +193,15 @@ export default function Dashboard({ onLogout, showToast }) {
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [metersData, countData, logsData, snowCountData, snowForecastData, allCountData] = await Promise.all([
+      const [metersData, countData, logsData, snowCountData, snowForecastData, allCountData, wasteStatsData, wasteCountData] = await Promise.all([
         api.getMeters(),
         api.getUnreadCount(),
         api.getSyncLogs(),
         api.getSnowUnreadCount().catch(() => ({ count: 0 })),
         api.getSnowForecast().catch(() => null),
         api.getAllUnreadCount().catch(() => ({ count: 0 })),
+        api.getWasteStats().catch(() => null),
+        api.getWasteUnreadCount().catch(() => ({ count: 0 })),
       ]);
       
       setMeters(metersData);
@@ -127,6 +210,8 @@ export default function Dashboard({ onLogout, showToast }) {
       setSnowUnreadCount(snowCountData.count);
       setSnowForecast(snowForecastData);
       setAllUnreadCount(allCountData.count);
+      setWasteStats(wasteStatsData);
+      setWasteUnreadCount(wasteCountData.count);
       
       return metersData;
     } catch (err) {
@@ -221,6 +306,28 @@ export default function Dashboard({ onLogout, showToast }) {
       showToast?.('Kontrola snehu zlyhala: ' + err.message, 'error');
     } finally {
       setCheckingSnow(false);
+    }
+  };
+
+  const handleCheckWaste = async () => {
+    setCheckingWaste(true);
+    try {
+      const result = await api.checkWaste();
+      if (result.alert) {
+        showToast?.('Vývoz odpadu zajtra! Alert vytvorený.', 'warning');
+        setWasteUnreadCount(prev => prev + 1);
+        // Refresh all unread count too
+        api.getAllUnreadCount().then(data => setAllUnreadCount(data.count)).catch(() => {});
+      } else if (result.checked) {
+        showToast?.('Zajtra nie je naplánovaný vývoz odpadu', 'success');
+      }
+      // Refresh waste stats to get updated next pickup info
+      const stats = await api.getWasteStats().catch(() => null);
+      setWasteStats(stats);
+    } catch (err) {
+      showToast?.('Kontrola odpadu zlyhala: ' + err.message, 'error');
+    } finally {
+      setCheckingWaste(false);
     }
   };
 
@@ -371,6 +478,16 @@ export default function Dashboard({ onLogout, showToast }) {
                 isActive={activeModule === 'snow'}
                 onClick={() => { setActiveModule('snow'); setActiveTab('snow-forecast'); }}
               />
+
+              {/* Waste module */}
+              <WasteModuleCard 
+                wasteStats={wasteStats}
+                wasteUnreadCount={wasteUnreadCount}
+                isActive={activeModule === 'waste'}
+                onClick={() => { setActiveModule('waste'); setActiveTab('waste-calendar'); }}
+                onCheckWaste={handleCheckWaste}
+                checkingWaste={checkingWaste}
+              />
             </div>
           </div>
         )}
@@ -430,7 +547,7 @@ export default function Dashboard({ onLogout, showToast }) {
                   Diagnostika
                 </button>
               </>
-            ) : (
+            ) : activeModule === 'snow' ? (
               <>
                 <button
                   onClick={() => setActiveTab('snow-forecast')}
@@ -472,7 +589,39 @@ export default function Dashboard({ onLogout, showToast }) {
                   Diagnostika
                 </button>
               </>
-            )}
+            ) : activeModule === 'waste' ? (
+              <>
+                <button
+                  onClick={() => setActiveTab('waste-calendar')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
+                    activeTab === 'waste-calendar'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Kalendár
+                </button>
+                <button
+                  onClick={() => setActiveTab('waste-alerts')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition flex items-center justify-center gap-2 ${
+                    activeTab === 'waste-alerts'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Alerty
+                  {wasteUnreadCount > 0 && (
+                    <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${
+                      activeTab === 'waste-alerts'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-emerald-100 text-emerald-600'
+                    }`}>
+                      {wasteUnreadCount}
+                    </span>
+                  )}
+                </button>
+              </>
+            ) : null}
           </nav>
         </div>
 
@@ -528,6 +677,18 @@ export default function Dashboard({ onLogout, showToast }) {
           />
         ) : activeTab === 'snow-diagnostics' ? (
           <SnowDiagnostics showToast={showToast} />
+        ) : activeTab === 'waste-calendar' ? (
+          <WasteCalendar showToast={showToast} />
+        ) : activeTab === 'waste-alerts' ? (
+          <WasteAlertsPanel 
+            onCountChange={(count) => {
+              setWasteUnreadCount(count);
+              // Also refresh combined count
+              api.getAllUnreadCount().then(data => setAllUnreadCount(data.count)).catch(() => {});
+            }} 
+            setConfirmDialog={setConfirmDialog} 
+            showToast={showToast}
+          />
         ) : null}
       </main>
 
@@ -776,6 +937,9 @@ export default function Dashboard({ onLogout, showToast }) {
             } else if (module === 'snow') {
               setActiveModule('snow');
               setActiveTab('snow-alerts');
+            } else if (module === 'waste') {
+              setActiveModule('waste');
+              setActiveTab('waste-alerts');
             }
           }}
           showToast={showToast}

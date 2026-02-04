@@ -4,12 +4,12 @@ import { sendAlertEmail } from '../services/email.js';
 
 const router = Router();
 
-// Get ALL alerts (combined water + snow) for bell icon
+// Get ALL alerts (combined water + snow + waste) for bell icon
 router.get('/all', async (req, res) => {
   try {
     const { unreadOnly, limit = 50 } = req.query;
 
-    // Combine water alerts and snow alerts with UNION
+    // Combine water alerts, snow alerts, and waste alerts with UNION
     let sql = `
       SELECT 
         a.id,
@@ -23,7 +23,9 @@ router.get('/all', async (req, res) => {
         a.value,
         a.threshold,
         NULL::decimal as snowfall_cm,
-        NULL::integer as freezing_days
+        NULL::integer as freezing_days,
+        NULL::text as waste_type,
+        NULL::date as pickup_date
       FROM alerts a
       JOIN meters m ON a.meter_id = m.meter_id
       ${unreadOnly === 'true' ? 'WHERE a.is_read = false' : ''}
@@ -42,9 +44,31 @@ router.get('/all', async (req, res) => {
         NULL::decimal as value,
         NULL::decimal as threshold,
         s.snowfall_cm,
-        s.freezing_days
+        s.freezing_days,
+        NULL::text as waste_type,
+        NULL::date as pickup_date
       FROM snow_alerts s
       ${unreadOnly === 'true' ? 'WHERE s.is_read = false' : ''}
+      
+      UNION ALL
+      
+      SELECT 
+        w.id,
+        'waste' as module,
+        w.alert_type,
+        w.message,
+        w.is_read,
+        w.email_sent,
+        w.created_at,
+        NULL as address,
+        NULL::decimal as value,
+        NULL::decimal as threshold,
+        NULL::decimal as snowfall_cm,
+        NULL::integer as freezing_days,
+        w.waste_type,
+        w.pickup_date
+      FROM waste_alerts w
+      ${unreadOnly === 'true' ? 'WHERE w.is_read = false' : ''}
       
       ORDER BY created_at DESC
       LIMIT $1
@@ -58,13 +82,14 @@ router.get('/all', async (req, res) => {
   }
 });
 
-// Get combined unread count (water + snow)
+// Get combined unread count (water + snow + waste)
 router.get('/all/unread-count', async (req, res) => {
   try {
     const result = await query(`
       SELECT 
         (SELECT COUNT(*) FROM alerts WHERE is_read = false) +
-        (SELECT COUNT(*) FROM snow_alerts WHERE is_read = false) as count
+        (SELECT COUNT(*) FROM snow_alerts WHERE is_read = false) +
+        (SELECT COUNT(*) FROM waste_alerts WHERE is_read = false) as count
     `);
     res.json({ count: parseInt(result.rows[0].count) });
   } catch (error) {

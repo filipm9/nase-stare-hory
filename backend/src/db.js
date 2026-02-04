@@ -120,6 +120,44 @@ export async function runMigrations() {
     ON snow_alerts(created_at DESC)
   `);
 
+  // Waste pickups table
+  await query(`
+    CREATE TABLE IF NOT EXISTS waste_pickups (
+      id SERIAL PRIMARY KEY,
+      pickup_date DATE NOT NULL,
+      waste_type VARCHAR(20) NOT NULL CHECK (waste_type IN ('komunal', 'plast', 'papier')),
+      notes TEXT,
+      notification_sent BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pickup_date, waste_type)
+    )
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_waste_pickups_date 
+    ON waste_pickups(pickup_date)
+  `);
+
+  // Waste alerts table
+  await query(`
+    CREATE TABLE IF NOT EXISTS waste_alerts (
+      id SERIAL PRIMARY KEY,
+      alert_type VARCHAR(50) NOT NULL,
+      waste_type VARCHAR(20),
+      message TEXT NOT NULL,
+      pickup_date DATE,
+      is_read BOOLEAN DEFAULT FALSE,
+      email_sent BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_waste_alerts_created 
+    ON waste_alerts(created_at DESC)
+  `);
+
   // Seed default admin user if no users exist
   const usersCount = await query('SELECT COUNT(*) FROM users');
   if (parseInt(usersCount.rows[0].count) === 0) {

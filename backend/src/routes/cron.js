@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { syncAll } from '../services/sync.js';
 import { checkSnowForecast } from '../services/snow-detector.js';
+import { checkWastePickups } from '../services/waste-notifier.js';
 import { config } from '../config.js';
 
 const router = Router();
@@ -27,11 +28,17 @@ router.post('/sync', async (req, res) => {
     const snowResult = await checkSnowForecast();
     console.log('Snow check completed:', snowResult);
 
+    // Check waste pickups for tomorrow
+    console.log('Checking waste pickups...');
+    const wasteResult = await checkWastePickups();
+    console.log('Waste check completed:', wasteResult);
+
     res.json({
       success: true,
       timestamp: new Date().toISOString(),
       sync: result,
       snow: snowResult,
+      waste: wasteResult,
     });
   } catch (error) {
     console.error('Cron sync error:', error);

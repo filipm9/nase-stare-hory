@@ -36,6 +36,13 @@ const ALERT_CONFIG = {
     color: 'blue',
     module: 'snow',
   },
+  // Waste alerts
+  pickup_reminder: {
+    label: 'Vývoz odpadu',
+    icon: '🚛',
+    color: 'emerald',
+    module: 'waste',
+  },
 };
 
 const colorClasses = {
@@ -63,11 +70,18 @@ const colorClasses = {
     text: 'text-blue-700',
     badge: 'bg-blue-100 text-blue-700',
   },
+  emerald: {
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    text: 'text-emerald-700',
+    badge: 'bg-emerald-100 text-emerald-700',
+  },
 };
 
 const moduleLabels = {
   water: { label: 'Voda', color: 'bg-cyan-100 text-cyan-700' },
   snow: { label: 'Sneh', color: 'bg-blue-100 text-blue-700' },
+  waste: { label: 'Odpad', color: 'bg-emerald-100 text-emerald-700' },
 };
 
 export default function AllAlertsPanel({ onClose, onCountChange, onNavigateToModule, showToast }) {
@@ -99,8 +113,10 @@ export default function AllAlertsPanel({ onClose, onCountChange, onNavigateToMod
     try {
       if (alert.module === 'water') {
         await api.markAlertRead(alert.id);
-      } else {
+      } else if (alert.module === 'snow') {
         await api.markSnowAlertRead(alert.id);
+      } else if (alert.module === 'waste') {
+        await api.markWasteAlertRead(alert.id);
       }
       setAlerts(alerts.map(a => 
         (a.id === alert.id && a.module === alert.module) ? { ...a, is_read: true } : a
@@ -115,10 +131,12 @@ export default function AllAlertsPanel({ onClose, onCountChange, onNavigateToMod
 
   const handleMarkAllRead = async () => {
     try {
-      // Mark all water alerts as read
-      await api.markAllAlertsRead();
-      // Mark all snow alerts as read
-      await api.markAllSnowAlertsRead();
+      // Mark all alerts as read from all modules
+      await Promise.all([
+        api.markAllAlertsRead(),
+        api.markAllSnowAlertsRead(),
+        api.markAllWasteAlertsRead(),
+      ]);
       
       setAlerts(alerts.map(a => ({ ...a, is_read: true })));
       onCountChange?.(0);
@@ -319,15 +337,22 @@ export default function AllAlertsPanel({ onClose, onCountChange, onNavigateToMod
               onClick={() => handleGoToModule('water')}
               className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-100 transition flex items-center justify-center gap-2"
             >
-              <span className="text-cyan-500">💧</span>
-              Vodné alerty
+              <span>💧</span>
+              Voda
             </button>
             <button
               onClick={() => handleGoToModule('snow')}
               className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-100 transition flex items-center justify-center gap-2"
             >
-              <span className="text-blue-500">❄️</span>
-              Snow alerty
+              <span>❄️</span>
+              Sneh
+            </button>
+            <button
+              onClick={() => handleGoToModule('waste')}
+              className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-100 transition flex items-center justify-center gap-2"
+            >
+              <span>🚛</span>
+              Odpad
             </button>
           </div>
         </div>

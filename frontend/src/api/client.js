@@ -137,4 +137,60 @@ export const api = {
   deleteSnowAlert: (id) => request(`/snow/alerts/${id}`, { method: 'DELETE' }),
   
   createTestSnowAlert: () => request('/snow/alerts/test', { method: 'POST' }),
+
+  // Waste module
+  getWasteTypes: () => request('/waste/types'),
+  
+  getWastePickups: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/waste/pickups${query ? `?${query}` : ''}`);
+  },
+  
+  getUpcomingPickups: (days = 30) => request(`/waste/pickups/upcoming?days=${days}`),
+  
+  getWasteStats: () => request('/waste/stats'),
+  
+  createWastePickup: (data) =>
+    request('/waste/pickups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  
+  createWasteSeries: (data) =>
+    request('/waste/pickups/series', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  
+  updateWastePickup: (id, data) =>
+    request(`/waste/pickups/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  
+  deleteWastePickup: (id) => request(`/waste/pickups/${id}`, { method: 'DELETE' }),
+  
+  deleteWastePickups: (ids) =>
+    request('/waste/pickups/delete-many', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+
+  // Waste alerts
+  checkWaste: () => request('/waste/check', { method: 'POST' }),
+  
+  getWasteAlerts: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/waste/alerts${query ? `?${query}` : ''}`);
+  },
+  
+  getWasteUnreadCount: () => request('/waste/alerts/unread-count'),
+  
+  markWasteAlertRead: (id) => request(`/waste/alerts/${id}/read`, { method: 'PATCH' }),
+  
+  markAllWasteAlertsRead: () => request('/waste/alerts/read-all', { method: 'PATCH' }),
+  
+  deleteWasteAlert: (id) => request(`/waste/alerts/${id}`, { method: 'DELETE' }),
+  
+  createTestWasteAlert: () => request('/waste/alerts/test', { method: 'POST' }),
 };

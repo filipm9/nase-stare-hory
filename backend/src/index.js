@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import waterRoutes from './routes/water.js';
 import alertsRoutes from './routes/alerts.js';
 import snowRoutes from './routes/snow.js';
+import wasteRoutes from './routes/waste.js';
 import cronRoutes from './routes/cron.js';
 
 const app = express();
@@ -32,7 +33,7 @@ app.use(cors({
 // Rate limiting - skip OPTIONS requests to allow CORS preflight
 app.use(rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  limit: 200,
+  limit: config.nodeEnv === 'production' ? 200 : 1000, // Higher limit for development
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.method === 'OPTIONS',
@@ -124,6 +125,7 @@ app.use('/auth', authRoutes);
 app.use('/water', authRequired, waterRoutes);
 app.use('/alerts', authRequired, alertsRoutes);
 app.use('/snow', authRequired, snowRoutes);
+app.use('/waste', authRequired, wasteRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {
