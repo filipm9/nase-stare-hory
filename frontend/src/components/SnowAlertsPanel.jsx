@@ -285,7 +285,10 @@ export default function SnowAlertsPanel({ onCountChange, setConfirmDialog, showT
                     ❄️
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 mb-1.5">
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                      <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-100 text-blue-700">
+                        Sneh
+                      </span>
                       <h3 className={`font-semibold ${alert.is_read ? 'text-slate-800' : 'text-blue-800'}`}>
                         Sneženie
                       </h3>

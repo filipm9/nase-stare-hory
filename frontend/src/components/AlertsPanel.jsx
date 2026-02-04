@@ -259,21 +259,20 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog, showToast
               onClick={handleMarkAllRead}
               className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800"
             >
-              Označiť všetky ako prečítané
+              Označiť všetky
             </button>
           )}
 
           <button
             onClick={handleDetectLeaks}
             disabled={detecting}
-            className="px-4 py-2 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 bg-cyan-600 text-white rounded-xl font-medium hover:bg-cyan-700 transition disabled:opacity-50 flex items-center gap-2"
           >
-            <svg className={`w-4 h-4 ${detecting ? 'animate-pulse' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+              <path d="M21 3v5h-5"/>
             </svg>
-            {detecting ? 'Kontrolujem...' : 'Skontrolovať'}
+            Skontrolovať
           </button>
 
           <button
@@ -343,7 +342,10 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog, showToast
                       {alertType.icon}
                     </div>
                     <div>
-                      <div className="flex items-center gap-2 mb-1.5">
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-cyan-100 text-cyan-700">
+                          Voda
+                        </span>
                         <h3 className={`font-semibold ${alert.is_read ? 'text-slate-800' : colors.text}`}>
                           {alertType.label}
                         </h3>
@@ -400,12 +402,13 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog, showToast
       {/* Detection Modal */}
       {showDetectionModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden">
             <div className="p-6 border-b border-slate-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-slate-800">
-                  Kontrola úniku vody
-                </h3>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800">Kontrola úniku vody</h3>
+                  <p className="text-sm text-slate-500">Analýza spotreby za posledných 24 hodín</p>
+                </div>
                 <button
                   onClick={() => setShowDetectionModal(false)}
                   className="p-2 text-slate-400 hover:text-slate-600 transition"
@@ -537,10 +540,21 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog, showToast
               ) : null}
             </div>
 
-            <div className="p-4 border-t border-slate-200 bg-slate-50">
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-3">
+              <button
+                onClick={handleCreateTestAlert}
+                disabled={creatingTest}
+                className="flex-1 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                  <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                {creatingTest ? 'Posielam...' : 'Poslať testovací alert'}
+              </button>
               <button
                 onClick={() => setShowDetectionModal(false)}
-                className="w-full px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"
+                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"
               >
                 Zavrieť
               </button>
@@ -555,9 +569,10 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog, showToast
           <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden">
             <div className="p-6 border-b border-slate-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-slate-800">
-                  Notifikačné nastavenia
-                </h3>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-800">Email notifikácie</h3>
+                  <p className="text-sm text-slate-500">Nastavenia pre celú aplikáciu</p>
+                </div>
                 <button
                   onClick={() => setShowSubscriptions(false)}
                   className="p-2 text-slate-400 hover:text-slate-600 transition"
@@ -570,30 +585,8 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog, showToast
             </div>
             
             <div className="p-6 overflow-y-auto max-h-[60vh]">
-              {/* Test Alert Section */}
-              <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium text-slate-800">Testovací alert</h4>
-                    <p className="text-sm text-slate-500">Vytvoriť testovací alert pre overenie notifikácií</p>
-                  </div>
-                  <button
-                    onClick={handleCreateTestAlert}
-                    disabled={creatingTest}
-                    className="px-4 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600 transition disabled:opacity-50 flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 5v14M5 12h14"/>
-                    </svg>
-                    {creatingTest ? 'Vytváram...' : 'Vytvoriť'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Email Subscriptions Section */}
-              <h4 className="font-medium text-slate-800 mb-2">Email notifikácie</h4>
-              <p className="text-slate-600 mb-4">
-                Pridajte emaily, ktoré budú dostávať notifikácie o alertoch.
+              <p className="text-sm text-slate-500 mb-4">
+                Emaily dostávajú všetky alerty z celej aplikácie (voda aj sneh).
               </p>
               
               {/* Add email form */}
@@ -623,7 +616,6 @@ export default function AlertsPanel({ onCountChange, setConfirmDialog, showToast
                     <polyline points="22,6 12,13 2,6"/>
                   </svg>
                   <p>Žiadne prihlásené emaily</p>
-                  <p className="text-sm mt-1">Pridajte email pre prijímanie notifikácií</p>
                 </div>
               ) : (
                 <div className="space-y-2">

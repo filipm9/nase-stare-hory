@@ -9,6 +9,7 @@ import WaterDiagnostics from './WaterDiagnostics';
 import SnowForecast from './SnowForecast';
 import SnowAlertsPanel from './SnowAlertsPanel';
 import SnowDiagnostics from './SnowDiagnostics';
+import AllAlertsPanel from './AllAlertsPanel';
 
 function SnowModuleCard({ onCheckSnow, checkingSnow, snowForecast, snowUnreadCount, isActive, onClick }) {
   const tomorrowSnow = snowForecast?.forecast?.snowfall_sum?.[1] || 0;
@@ -103,16 +104,21 @@ export default function Dashboard({ onLogout, showToast }) {
   const [checkingSnow, setCheckingSnow] = useState(false);
   const [snowForecast, setSnowForecast] = useState(null);
   const [snowUnreadCount, setSnowUnreadCount] = useState(0);
+  
+  // All alerts modal state (for bell icon)
+  const [showAllAlertsModal, setShowAllAlertsModal] = useState(false);
+  const [allUnreadCount, setAllUnreadCount] = useState(0);
 
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [metersData, countData, logsData, snowCountData, snowForecastData] = await Promise.all([
+      const [metersData, countData, logsData, snowCountData, snowForecastData, allCountData] = await Promise.all([
         api.getMeters(),
         api.getUnreadCount(),
         api.getSyncLogs(),
         api.getSnowUnreadCount().catch(() => ({ count: 0 })),
         api.getSnowForecast().catch(() => null),
+        api.getAllUnreadCount().catch(() => ({ count: 0 })),
       ]);
       
       setMeters(metersData);
@@ -120,6 +126,7 @@ export default function Dashboard({ onLogout, showToast }) {
       setSyncLogs(logsData);
       setSnowUnreadCount(snowCountData.count);
       setSnowForecast(snowForecastData);
+      setAllUnreadCount(allCountData.count);
       
       return metersData;
     } catch (err) {
@@ -239,23 +246,23 @@ export default function Dashboard({ onLogout, showToast }) {
 
             {/* Actions */}
             <div className="flex items-center gap-1.5">
-              {/* Alerts badge */}
+              {/* All Alerts badge - shows combined count from all modules */}
               <button
-                onClick={() => setActiveTab('alerts')}
+                onClick={() => setShowAllAlertsModal(true)}
                 className={`relative p-2 rounded-lg transition ${
-                  activeTab === 'alerts'
+                  showAllAlertsModal
                     ? 'text-emerald-600 bg-emerald-50'
                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                 }`}
-                title="Alerty"
+                title="Všetky alerty"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                   <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                 </svg>
-                {unreadCount > 0 && (
+                {allUnreadCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
-                    {unreadCount > 9 ? '9+' : unreadCount}
+                    {allUnreadCount > 9 ? '9+' : allUnreadCount}
                   </span>
                 )}
               </button>
@@ -316,6 +323,11 @@ export default function Dashboard({ onLogout, showToast }) {
                     </svg>
                   </div>
                   <div className="flex items-center gap-1">
+                    {unreadCount > 0 && (
+                      <span className="px-1.5 py-0.5 bg-cyan-100 text-cyan-700 text-[10px] font-medium rounded">
+                        {unreadCount}
+                      </span>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); handleOpenSyncModal(); }}
                       disabled={syncing}
@@ -489,7 +501,15 @@ export default function Dashboard({ onLogout, showToast }) {
             {selectedMeter && <ConsumptionChart meterId={selectedMeter.meter_id} />}
           </div>
         ) : activeTab === 'alerts' ? (
-          <AlertsPanel onCountChange={setUnreadCount} setConfirmDialog={setConfirmDialog} showToast={showToast} />
+          <AlertsPanel 
+            onCountChange={(count) => {
+              setUnreadCount(count);
+              // Also refresh combined count
+              api.getAllUnreadCount().then(data => setAllUnreadCount(data.count)).catch(() => {});
+            }} 
+            setConfirmDialog={setConfirmDialog} 
+            showToast={showToast} 
+          />
         ) : activeTab === 'history' ? (
           <SyncHistory logs={syncLogs} />
         ) : activeTab === 'water-settings' ? (
@@ -498,7 +518,11 @@ export default function Dashboard({ onLogout, showToast }) {
           <SnowForecast showToast={showToast} />
         ) : activeTab === 'snow-alerts' ? (
           <SnowAlertsPanel 
-            onCountChange={setSnowUnreadCount} 
+            onCountChange={(count) => {
+              setSnowUnreadCount(count);
+              // Also refresh combined count
+              api.getAllUnreadCount().then(data => setAllUnreadCount(data.count)).catch(() => {});
+            }} 
             setConfirmDialog={setConfirmDialog} 
             showToast={showToast}
           />
@@ -734,6 +758,28 @@ export default function Dashboard({ onLogout, showToast }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* All Alerts Modal - shows alerts from all modules */}
+      {showAllAlertsModal && (
+        <AllAlertsPanel
+          onClose={() => setShowAllAlertsModal(false)}
+          onCountChange={(count) => {
+            setAllUnreadCount(count);
+            // Refresh individual counts too
+            loadData();
+          }}
+          onNavigateToModule={(module) => {
+            if (module === 'water') {
+              setActiveModule('water');
+              setActiveTab('alerts');
+            } else if (module === 'snow') {
+              setActiveModule('snow');
+              setActiveTab('snow-alerts');
+            }
+          }}
+          showToast={showToast}
+        />
       )}
     </div>
   );

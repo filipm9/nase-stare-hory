@@ -4,7 +4,76 @@ import { sendAlertEmail } from '../services/email.js';
 
 const router = Router();
 
-// Get all alerts
+// Get ALL alerts (combined water + snow) for bell icon
+router.get('/all', async (req, res) => {
+  try {
+    const { unreadOnly, limit = 50 } = req.query;
+
+    // Combine water alerts and snow alerts with UNION
+    let sql = `
+      SELECT 
+        a.id,
+        'water' as module,
+        a.alert_type,
+        a.message,
+        a.is_read,
+        a.email_sent,
+        a.created_at,
+        m.address,
+        a.value,
+        a.threshold,
+        NULL::decimal as snowfall_cm,
+        NULL::integer as freezing_days
+      FROM alerts a
+      JOIN meters m ON a.meter_id = m.meter_id
+      ${unreadOnly === 'true' ? 'WHERE a.is_read = false' : ''}
+      
+      UNION ALL
+      
+      SELECT 
+        s.id,
+        'snow' as module,
+        s.alert_type,
+        s.message,
+        s.is_read,
+        s.email_sent,
+        s.created_at,
+        NULL as address,
+        NULL::decimal as value,
+        NULL::decimal as threshold,
+        s.snowfall_cm,
+        s.freezing_days
+      FROM snow_alerts s
+      ${unreadOnly === 'true' ? 'WHERE s.is_read = false' : ''}
+      
+      ORDER BY created_at DESC
+      LIMIT $1
+    `;
+
+    const result = await query(sql, [parseInt(limit)]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get all alerts error:', error);
+    res.status(500).json({ error: 'Failed to get alerts' });
+  }
+});
+
+// Get combined unread count (water + snow)
+router.get('/all/unread-count', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        (SELECT COUNT(*) FROM alerts WHERE is_read = false) +
+        (SELECT COUNT(*) FROM snow_alerts WHERE is_read = false) as count
+    `);
+    res.json({ count: parseInt(result.rows[0].count) });
+  } catch (error) {
+    console.error('Get combined unread count error:', error);
+    res.status(500).json({ error: 'Failed to get unread count' });
+  }
+});
+
+// Get water alerts only (for water module)
 router.get('/', async (req, res) => {
   try {
     const { unreadOnly, limit = 50 } = req.query;

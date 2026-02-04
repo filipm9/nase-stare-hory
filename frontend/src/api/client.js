@@ -87,6 +87,14 @@ export const api = {
   
   getUnreadCount: () => request('/alerts/unread-count'),
   
+  // Combined alerts (for bell icon - all modules)
+  getAllAlerts: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/alerts/all${query ? `?${query}` : ''}`);
+  },
+  
+  getAllUnreadCount: () => request('/alerts/all/unread-count'),
+  
   markAlertRead: (id) => request(`/alerts/${id}/read`, { method: 'PATCH' }),
   
   markAllAlertsRead: () => request('/alerts/read-all', { method: 'PATCH' }),
