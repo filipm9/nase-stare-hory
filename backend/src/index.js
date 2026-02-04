@@ -10,6 +10,7 @@ import { authRequired } from './auth.js';
 import authRoutes from './routes/auth.js';
 import waterRoutes from './routes/water.js';
 import alertsRoutes from './routes/alerts.js';
+import snowRoutes from './routes/snow.js';
 import cronRoutes from './routes/cron.js';
 
 const app = express();
@@ -122,6 +123,7 @@ app.use('/auth', authRoutes);
 // Protected routes
 app.use('/water', authRequired, waterRoutes);
 app.use('/alerts', authRequired, alertsRoutes);
+app.use('/snow', authRequired, snowRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {

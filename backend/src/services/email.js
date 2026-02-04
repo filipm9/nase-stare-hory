@@ -18,6 +18,104 @@ async function getSubscribers() {
   return result.rows.map(r => r.email);
 }
 
+export async function sendSnowAlertEmail(alert, analysis) {
+  const client = getResend();
+  
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY is not set - snow email cannot be sent');
+    return false;
+  }
+
+  const subject = `❄️ Sneh Alert: Zajtra má nasnežiť ${alert.snowfall_cm}cm`;
+  
+  // Build forecast table for next days
+  let forecastRows = '';
+  if (analysis?.forecast) {
+    for (let i = 1; i < Math.min(analysis.forecast.dates.length, 6); i++) {
+      const date = new Date(analysis.forecast.dates[i]);
+      const dayName = date.toLocaleDateString('sk-SK', { weekday: 'short', day: 'numeric', month: 'short' });
+      const snow = analysis.forecast.snowfall[i] || 0;
+      const tempMax = analysis.forecast.tempMax[i];
+      const tempMin = analysis.forecast.tempMin[i];
+      const isFreezing = tempMax <= 0;
+      
+      forecastRows += `
+        <tr style="${i === 1 ? 'background: #dbeafe;' : ''}">
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${dayName}${i === 1 ? ' (zajtra)' : ''}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${snow > 0 ? `${snow}cm ❄️` : '-'}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center; ${isFreezing ? 'color: #1d4ed8; font-weight: bold;' : ''}">${tempMin}° / ${tempMax}°C</td>
+        </tr>
+      `;
+    }
+  }
+  
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1d4ed8;">❄️ Upozornenie na sneženie</h2>
+      
+      <div style="background: #dbeafe; border: 1px solid #93c5fd; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <h3 style="margin: 0 0 8px 0; color: #1e40af;">
+          Zajtra má nasnežiť ${alert.snowfall_cm}cm snehu!
+        </h3>
+        <p style="margin: 0; color: #1e3a8a;">${alert.message}</p>
+      </div>
+      
+      <h4 style="color: #374151; margin-bottom: 8px;">Predpoveď na najbližšie dni:</h4>
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+        <thead>
+          <tr style="background: #f3f4f6;">
+            <th style="padding: 8px; text-align: left; border-bottom: 2px solid #d1d5db;">Deň</th>
+            <th style="padding: 8px; text-align: center; border-bottom: 2px solid #d1d5db;">Sneh</th>
+            <th style="padding: 8px; text-align: center; border-bottom: 2px solid #d1d5db;">Teplota</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${forecastRows}
+        </tbody>
+      </table>
+      
+      <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <p style="margin: 0; color: #92400e; font-weight: bold;">
+          ⚠️ Nasledujúce ${alert.freezing_days} dni bude mráz - sneh sa neroztopí!
+        </p>
+        <p style="margin: 8px 0 0 0; color: #92400e;">
+          Pripravte sa na odpratanie snehu zo striech a chodníkov.
+        </p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+      
+      <p style="color: #9ca3af; font-size: 12px;">
+        Tento email bol automaticky vygenerovaný systémom Staré Hory Monitor.
+      </p>
+    </div>
+  `;
+
+  try {
+    const subscribers = await getSubscribers();
+    
+    if (subscribers.length === 0) {
+      console.warn('No subscribers to send snow alert email to');
+      return false;
+    }
+
+    console.log(`Sending snow alert email to ${subscribers.length} subscribers`);
+
+    const result = await client.emails.send({
+      from: 'Staré Hory Monitor <onboarding@resend.dev>',
+      to: subscribers,
+      subject,
+      html,
+    });
+    
+    console.log('Snow alert email sent:', result);
+    return true;
+  } catch (error) {
+    console.error('Failed to send snow alert email:', error);
+    return false;
+  }
+}
+
 export async function sendAlertEmail(alert) {
   const client = getResend();
   

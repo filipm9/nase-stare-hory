@@ -109,4 +109,24 @@ export const api = {
     }),
   
   unsubscribe: (id) => request(`/alerts/subscriptions/${id}`, { method: 'DELETE' }),
+
+  // Snow module
+  checkSnow: () => request('/snow/check', { method: 'POST' }),
+  
+  getSnowForecast: () => request('/snow/forecast'),
+  
+  getSnowAlerts: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/snow/alerts${query ? `?${query}` : ''}`);
+  },
+  
+  getSnowUnreadCount: () => request('/snow/alerts/unread-count'),
+  
+  markSnowAlertRead: (id) => request(`/snow/alerts/${id}/read`, { method: 'PATCH' }),
+  
+  markAllSnowAlertsRead: () => request('/snow/alerts/read-all', { method: 'PATCH' }),
+  
+  deleteSnowAlert: (id) => request(`/snow/alerts/${id}`, { method: 'DELETE' }),
+  
+  createTestSnowAlert: () => request('/snow/alerts/test', { method: 'POST' }),
 };

@@ -100,6 +100,26 @@ export async function runMigrations() {
     )
   `);
 
+  // Snow alerts table
+  await query(`
+    CREATE TABLE IF NOT EXISTS snow_alerts (
+      id SERIAL PRIMARY KEY,
+      alert_type VARCHAR(50) NOT NULL,
+      message TEXT NOT NULL,
+      snowfall_cm DECIMAL(5, 1),
+      freezing_days INTEGER,
+      snow_date DATE,
+      is_read BOOLEAN DEFAULT FALSE,
+      email_sent BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_snow_alerts_created 
+    ON snow_alerts(created_at DESC)
+  `);
+
   // Seed default admin user if no users exist
   const usersCount = await query('SELECT COUNT(*) FROM users');
   if (parseInt(usersCount.rows[0].count) === 0) {

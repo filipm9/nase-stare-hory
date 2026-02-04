@@ -6,6 +6,82 @@ import StatsCards from './StatsCards';
 import SettingsPanel from './SettingsPanel';
 import SyncHistory from './SyncHistory';
 import WaterDiagnostics from './WaterDiagnostics';
+import SnowForecast from './SnowForecast';
+import SnowAlertsPanel from './SnowAlertsPanel';
+import SnowDiagnostics from './SnowDiagnostics';
+
+function SnowModuleCard({ onCheckSnow, checkingSnow, snowForecast, snowUnreadCount, isActive, onClick }) {
+  const tomorrowSnow = snowForecast?.forecast?.snowfall_sum?.[1] || 0;
+  const tomorrowTempMax = snowForecast?.forecast?.temperature_2m_max?.[1];
+  const tomorrowTempMin = snowForecast?.forecast?.temperature_2m_min?.[1];
+  const hasData = snowForecast?.available;
+  
+  return (
+    <div 
+      onClick={onClick}
+      className={`flex-shrink-0 bg-white rounded-2xl border-2 shadow-sm p-4 min-w-[240px] relative overflow-hidden cursor-pointer transition ${
+        isActive ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-blue-500/30 hover:border-blue-400'
+      }`}
+    >
+      <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-blue-500/10 to-transparent rounded-bl-full pointer-events-none" />
+      <div className="flex items-start justify-between mb-3">
+        <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-xl flex items-center justify-center shadow-sm">
+          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <div className="flex items-center gap-1">
+          {snowUnreadCount > 0 && (
+            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-medium rounded">
+              {snowUnreadCount}
+            </span>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onCheckSnow(); }}
+            disabled={checkingSnow}
+            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition disabled:opacity-50"
+            title="Skontrolovať predpoveď"
+          >
+            <svg className={`w-4 h-4 ${checkingSnow ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+              <path d="M21 3v5h-5"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Sneh</p>
+          {hasData ? (
+            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-medium rounded">Online</span>
+          ) : (
+            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-medium rounded">Offline</span>
+          )}
+        </div>
+        {hasData ? (
+          <>
+            <p className="text-xl font-semibold text-slate-800">
+              {tomorrowSnow > 0 ? (
+                <span className="text-blue-600">{tomorrowSnow}cm ❄️</span>
+              ) : (
+                <span className="text-slate-400">0cm</span>
+              )}
+              <span className="text-sm font-normal text-slate-400 ml-1">zajtra</span>
+            </p>
+            {tomorrowTempMax !== undefined && (
+              <p className="text-xs text-slate-400">
+                {tomorrowTempMin}° / {tomorrowTempMax}°C
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-slate-400">Načítavam...</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard({ onLogout, showToast }) {
   const [meters, setMeters] = useState([]);
@@ -21,19 +97,29 @@ export default function Dashboard({ onLogout, showToast }) {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [error, setError] = useState(null);
+  const [activeModule, setActiveModule] = useState('water');
+  
+  // Snow module state
+  const [checkingSnow, setCheckingSnow] = useState(false);
+  const [snowForecast, setSnowForecast] = useState(null);
+  const [snowUnreadCount, setSnowUnreadCount] = useState(0);
 
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [metersData, countData, logsData] = await Promise.all([
+      const [metersData, countData, logsData, snowCountData, snowForecastData] = await Promise.all([
         api.getMeters(),
         api.getUnreadCount(),
         api.getSyncLogs(),
+        api.getSnowUnreadCount().catch(() => ({ count: 0 })),
+        api.getSnowForecast().catch(() => null),
       ]);
       
       setMeters(metersData);
       setUnreadCount(countData.count);
       setSyncLogs(logsData);
+      setSnowUnreadCount(snowCountData.count);
+      setSnowForecast(snowForecastData);
       
       return metersData;
     } catch (err) {
@@ -109,6 +195,25 @@ export default function Dashboard({ onLogout, showToast }) {
       showToast?.('Synchronizácia zlyhala: ' + err.message, 'error');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleCheckSnow = async () => {
+    setCheckingSnow(true);
+    try {
+      const result = await api.checkSnow();
+      if (result.alert) {
+        showToast?.('Vytvorený snow alert!', 'warning');
+        setSnowUnreadCount(prev => prev + 1);
+      } else if (result.checked) {
+        showToast?.('Žiadne sneženie v najbližších 24h', 'success');
+      }
+      const forecast = await api.getSnowForecast().catch(() => null);
+      setSnowForecast(forecast);
+    } catch (err) {
+      showToast?.('Kontrola snehu zlyhala: ' + err.message, 'error');
+    } finally {
+      setCheckingSnow(false);
     }
   };
 
@@ -195,8 +300,13 @@ export default function Dashboard({ onLogout, showToast }) {
               <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Moduly</h2>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
-              {/* Water module - active */}
-              <div className="flex-shrink-0 bg-white rounded-2xl border-2 border-cyan-500/30 shadow-sm p-4 min-w-[240px] relative overflow-hidden">
+              {/* Water module */}
+              <div 
+                onClick={() => { setActiveModule('water'); setActiveTab('consumption'); }}
+                className={`flex-shrink-0 bg-white rounded-2xl border-2 shadow-sm p-4 min-w-[240px] relative overflow-hidden cursor-pointer transition ${
+                  activeModule === 'water' ? 'border-cyan-500 ring-2 ring-cyan-500/20' : 'border-cyan-500/30 hover:border-cyan-400'
+                }`}
+              >
                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-cyan-500/10 to-transparent rounded-bl-full pointer-events-none" />
                 <div className="flex items-start justify-between mb-3">
                   <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-xl flex items-center justify-center shadow-sm">
@@ -207,7 +317,7 @@ export default function Dashboard({ onLogout, showToast }) {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={handleOpenSyncModal}
+                      onClick={(e) => { e.stopPropagation(); handleOpenSyncModal(); }}
                       disabled={syncing}
                       className="p-1.5 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition disabled:opacity-50"
                       title="Synchronizovať"
@@ -215,16 +325,6 @@ export default function Dashboard({ onLogout, showToast }) {
                       <svg className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
                         <path d="M21 3v5h-5"/>
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('water-settings')}
-                      className="p-1.5 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition"
-                      title="Nastavenia vodomera"
-                    >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
                       </svg>
                     </button>
                   </div>
@@ -250,72 +350,117 @@ export default function Dashboard({ onLogout, showToast }) {
                 </div>
               </div>
 
-              {/* Future modules placeholder */}
-              <div className="flex-shrink-0 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 p-4 min-w-[160px] flex flex-col items-center justify-center text-center cursor-default">
-                <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center mb-2">
-                  <svg className="w-5 h-5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19"/>
-                    <line x1="5" y1="12" x2="19" y2="12"/>
-                  </svg>
-                </div>
-                <p className="text-xs text-slate-400">Ďalšie moduly<br/>čoskoro</p>
-              </div>
+              {/* Snow module */}
+              <SnowModuleCard 
+                onCheckSnow={handleCheckSnow}
+                checkingSnow={checkingSnow}
+                snowForecast={snowForecast}
+                snowUnreadCount={snowUnreadCount}
+                isActive={activeModule === 'snow'}
+                onClick={() => { setActiveModule('snow'); setActiveTab('snow-forecast'); }}
+              />
             </div>
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Tabs - different for each module */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 mb-6">
           <nav className="flex p-1.5 gap-1">
-            <button
-              onClick={() => setActiveTab('consumption')}
-              className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
-                activeTab === 'consumption'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              Spotreba
-            </button>
-            <button
-              onClick={() => setActiveTab('alerts')}
-              className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition flex items-center justify-center gap-2 ${
-                activeTab === 'alerts'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              Alerty
-              {unreadCount > 0 && (
-                <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${
-                  activeTab === 'alerts'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-red-100 text-red-600'
-                }`}>
-                  {unreadCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
-                activeTab === 'history'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              História
-            </button>
-            <button
-              onClick={() => setActiveTab('water-settings')}
-              className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
-                activeTab === 'water-settings'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              Diagnostika
-            </button>
+            {activeModule === 'water' ? (
+              <>
+                <button
+                  onClick={() => setActiveTab('consumption')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
+                    activeTab === 'consumption'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Spotreba
+                </button>
+                <button
+                  onClick={() => setActiveTab('alerts')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition flex items-center justify-center gap-2 ${
+                    activeTab === 'alerts'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Alerty
+                  {unreadCount > 0 && (
+                    <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${
+                      activeTab === 'alerts'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-red-100 text-red-600'
+                    }`}>
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab('history')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
+                    activeTab === 'history'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  História
+                </button>
+                <button
+                  onClick={() => setActiveTab('water-settings')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
+                    activeTab === 'water-settings'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Diagnostika
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setActiveTab('snow-forecast')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
+                    activeTab === 'snow-forecast'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Predpoveď
+                </button>
+                <button
+                  onClick={() => setActiveTab('snow-alerts')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition flex items-center justify-center gap-2 ${
+                    activeTab === 'snow-alerts'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Alerty
+                  {snowUnreadCount > 0 && (
+                    <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${
+                      activeTab === 'snow-alerts'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-blue-100 text-blue-600'
+                    }`}>
+                      {snowUnreadCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab('snow-diagnostics')}
+                  className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-xl transition ${
+                    activeTab === 'snow-diagnostics'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Diagnostika
+                </button>
+              </>
+            )}
           </nav>
         </div>
 
@@ -349,6 +494,16 @@ export default function Dashboard({ onLogout, showToast }) {
           <SyncHistory logs={syncLogs} />
         ) : activeTab === 'water-settings' ? (
           <WaterDiagnostics />
+        ) : activeTab === 'snow-forecast' ? (
+          <SnowForecast showToast={showToast} />
+        ) : activeTab === 'snow-alerts' ? (
+          <SnowAlertsPanel 
+            onCountChange={setSnowUnreadCount} 
+            setConfirmDialog={setConfirmDialog} 
+            showToast={showToast}
+          />
+        ) : activeTab === 'snow-diagnostics' ? (
+          <SnowDiagnostics showToast={showToast} />
         ) : null}
       </main>
 
