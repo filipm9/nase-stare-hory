@@ -79,21 +79,12 @@ async function checkSuddenSpike(meterId) {
   const avg = parseFloat(result.rows[0]?.avg_consumption) || 0;
 
   if (avg > 0 && recent > avg * THRESHOLDS.suddenSpike) {
-    const existing = await query(`
-      SELECT id FROM alerts 
-      WHERE meter_id = $1 
-        AND alert_type = 'sudden_spike'
-        AND created_at > NOW() - INTERVAL '3 hours'
-    `, [meterId]);
-
-    if (existing.rows.length === 0) {
-      return {
-        type: 'sudden_spike',
-        message: `Náhly skok spotreby: ${recent.toFixed(4)} m³/hod (priemer: ${avg.toFixed(4)} m³/hod). To je ${(recent/avg).toFixed(1)}x viac ako normálne.`,
-        value: recent,
-        threshold: avg * THRESHOLDS.suddenSpike,
-      };
-    }
+    return {
+      type: 'sudden_spike',
+      message: `Náhly skok spotreby: ${recent.toFixed(4)} m³/hod (priemer: ${avg.toFixed(4)} m³/hod). To je ${(recent/avg).toFixed(1)}x viac ako normálne.`,
+      value: recent,
+      threshold: avg * THRESHOLDS.suddenSpike,
+    };
   }
 
   return null;
@@ -130,21 +121,12 @@ async function checkContinuousFlow(meterId) {
   const flowHours = parseInt(result.rows[0]?.flow_hours) || 0;
 
   if (flowHours >= THRESHOLDS.continuousFlowHours) {
-    const existing = await query(`
-      SELECT id FROM alerts 
-      WHERE meter_id = $1 
-        AND alert_type = 'continuous_flow'
-        AND created_at > NOW() - INTERVAL '12 hours'
-    `, [meterId]);
-
-    if (existing.rows.length === 0) {
-      return {
-        type: 'continuous_flow',
-        message: `Voda tečie nepretržite už ${flowHours} hodín. To môže indikovať únik.`,
-        value: flowHours,
-        threshold: THRESHOLDS.continuousFlowHours,
-      };
-    }
+    return {
+      type: 'continuous_flow',
+      message: `Voda tečie nepretržite už ${flowHours} hodín. To môže indikovať únik.`,
+      value: flowHours,
+      threshold: THRESHOLDS.continuousFlowHours,
+    };
   }
 
   return null;
@@ -187,21 +169,12 @@ async function checkHighDailyConsumption(meterId) {
   // This prevents false alerts for hot tubs, garden watering, etc.
   const threshold = avg * THRESHOLDS.highDailyMultiplier;
   if (avg > 0 && today > threshold && today > THRESHOLDS.highDailyMinimum) {
-    const existing = await query(`
-      SELECT id FROM alerts 
-      WHERE meter_id = $1 
-        AND alert_type = 'high_daily'
-        AND created_at > NOW() - INTERVAL '12 hours'
-    `, [meterId]);
-
-    if (existing.rows.length === 0) {
-      return {
-        type: 'high_daily',
-        message: `Dnešná spotreba ${today.toFixed(3)} m³ je ${(today/avg).toFixed(1)}x vyššia ako mesačný priemer (${avg.toFixed(3)} m³/deň).`,
-        value: today,
-        threshold: threshold,
-      };
-    }
+    return {
+      type: 'high_daily',
+      message: `Dnešná spotreba ${today.toFixed(3)} m³ je ${(today/avg).toFixed(1)}x vyššia ako mesačný priemer (${avg.toFixed(3)} m³/deň).`,
+      value: today,
+      threshold: threshold,
+    };
   }
 
   return null;
@@ -225,21 +198,12 @@ async function checkFreezingRisk(meterId) {
   const temp = rawTemp !== null && rawTemp !== undefined ? parseFloat(rawTemp) : null;
 
   if (temp !== null && !isNaN(temp) && temp < THRESHOLDS.freezingTemp) {
-    const existing = await query(`
-      SELECT id FROM alerts 
-      WHERE meter_id = $1 
-        AND alert_type = 'freezing_risk'
-        AND created_at > NOW() - INTERVAL '6 hours'
-    `, [meterId]);
-
-    if (existing.rows.length === 0) {
-      return {
-        type: 'freezing_risk',
-        message: `Teplota vody je ${temp}°C. Riziko zamrznutia potrubia!`,
-        value: temp,
-        threshold: THRESHOLDS.freezingTemp,
-      };
-    }
+    return {
+      type: 'freezing_risk',
+      message: `Teplota vody je ${temp}°C. Riziko zamrznutia potrubia!`,
+      value: temp,
+      threshold: THRESHOLDS.freezingTemp,
+    };
   }
 
   return null;

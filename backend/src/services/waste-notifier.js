@@ -39,19 +39,16 @@ export const WASTE_EMOJI = {
 /**
  * Check for pickups happening tomorrow and send notification emails
  * Should be called daily by cron (ideally in the evening)
- * @param {boolean} force - If true, always send notification even if already sent (for manual checks)
+ * Always sends alert if there are pickups tomorrow - deduplication handled by external cron
  */
-export async function checkWastePickups(force = false) {
-  console.log('Checking waste pickups for tomorrow...', force ? '(forced)' : '');
+export async function checkWastePickups() {
+  console.log('Checking waste pickups for tomorrow...');
   
   try {
     // Find all pickups for tomorrow
-    // If force=true (manual check), ignore notification_sent flag
-    // If force=false (cron), only get pickups that haven't been notified yet
     const result = await query(`
       SELECT * FROM waste_pickups 
       WHERE pickup_date = CURRENT_DATE + 1
-        ${force ? '' : 'AND notification_sent = false'}
       ORDER BY waste_type
     `);
     
@@ -83,15 +80,6 @@ export async function checkWastePickups(force = false) {
     const emailSent = await sendWasteNotificationEmail(result.rows);
     
     if (emailSent) {
-      // Mark pickups as notified (only if not forced - cron should mark them)
-      if (!force) {
-        const ids = result.rows.map(r => r.id);
-        await query(
-          'UPDATE waste_pickups SET notification_sent = true WHERE id = ANY($1)',
-          [ids]
-        );
-        console.log('Marked pickups as notified:', ids);
-      }
       // Mark alert as email sent
       await query('UPDATE waste_alerts SET email_sent = true WHERE id = $1', [savedAlert.id]);
     }

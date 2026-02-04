@@ -312,10 +312,9 @@ router.get('/stats', async (req, res) => {
 // ============ ALERTS ============
 
 // Check pickups and create alert if needed (manual trigger)
-// force=true means always send notification even if already sent today
 router.post('/check', async (req, res) => {
   try {
-    const result = await checkWastePickups(true); // force=true for manual checks
+    const result = await checkWastePickups();
     res.json(result);
   } catch (error) {
     console.error('Waste check error:', error);
